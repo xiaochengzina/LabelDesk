@@ -1,0 +1,39 @@
+{
+  "name": "labeldesk",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "LabelDesk - Windows 标签设计与热敏打印工具",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
+    "verify:1d": "node scripts/verify-1d.mjs",
+    "verify:qr": "node scripts/verify-qr.mjs",
+    "verify:variables": "node --import ./scripts/loader-register.mjs scripts/verify-variables.mjs",
+    "verify:dpi": "node --import ./scripts/loader-register.mjs scripts/verify-dpi.mjs",
+    "verify:render": "node --import ./scripts/loader-register.mjs scripts/e2e-print.mjs",
+    "verify:all": "npm run typecheck && npm run verify:1d && npm run verify:qr && npm run verify:variables && npm run verify:dpi"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.2",
+    "@tauri-apps/plugin-dialog": "^2.8.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.10",
+    "@tauri-apps/cli": "^2.12.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4"
+  }
+}
