@@ -62,14 +62,14 @@ const dpi = layout.printer?.dpi ?? 203;
  * @param variables 变量值
  * @param suffix 文件名后缀
  */
-function renderLabel(variables, suffix) {
+function renderLabel(variables, suffix, offsetX = 0, offsetY = 0) {
   const widthPx = Math.round(mmToPx(layout.settings.widthMm, dpi));
   const heightPx = Math.round(mmToPx(layout.settings.heightMm, dpi));
   const canvas = createCanvas(widthPx, heightPx);
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, widthPx, heightPx);
-  renderLayout(ctx, layout, { dpi, variables, background: "#ffffff" });
+  renderLayout(ctx, layout, { dpi, variables, background: "#ffffff", offsetXMm: offsetX, offsetYMm: offsetY });
   const out = path.resolve("docs", `preview-${layout.name}${suffix}.png`);
   writeFileSync(out, canvas.toBuffer("image/png"));
   return { out, widthPx, heightPx };
@@ -88,3 +88,18 @@ console.log(`  （1px = ${pxToMm(1, dpi).toFixed(4)} mm）`);
 const pasted = renderLabel({ ...layout.variables, ...fill.variables }, "-粘贴后");
 console.log(`\n粘贴数据版：${pasted.out}`);
 console.log("  注意型号/配置/条码/二维码/入库信息都已按粘贴内容替换。");
+
+// 3) 定位补偿演示：把内容整体右移 6mm，模拟「补偿后被左边裁掉」的修正效果
+const offX = Number((process.argv.find((a) => a.startsWith("--offsetX=")) ?? "--offsetX=-6").split("=")[1]);
+const offY = Number((process.argv.find((a) => a.startsWith("--offsetY=")) ?? "--offsetY=0").split("=")[1]);
+if (offX !== 0 || offY !== 0) {
+  const shifted = renderLabel(
+    { ...layout.variables, ...fill.variables },
+    `-补偿X${offX}Y${offY}`,
+    offX,
+    offY,
+  );
+  console.log(`\n定位补偿演示（横向 ${offX} mm，纵向 ${offY} mm）：`);
+  console.log(`  ${shifted.out}`);
+  console.log("  默认演示的是「内容偏左 6mm 时把横向补偿设为 +6」的效果。");
+}

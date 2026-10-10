@@ -151,6 +151,18 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
   /** 当前预览是否只是模板示例值（提醒操作员这不是真实数据） */
   const showingSample = !pasteText.trim();
 
+  /** 该模板保存的打印机参数（含定位补偿量） */
+  const profile: PrinterProfile = useMemo(
+    () =>
+      layout?.printer ?? {
+        ...DEFAULT_PRINTER_PROFILE,
+        name: printer?.name ?? "",
+        channel: printer?.suggestedChannel ?? "driver",
+        language: printer?.suggestedRawLanguage ?? "tspl",
+      },
+    [layout, printer],
+  );
+
   // ---------------------------------------------------------------- 预览
   const previewUrl = useMemo(() => {
     if (!layout) return "";
@@ -159,11 +171,13 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
         dpi: PREVIEW_DPI,
         variables: effectiveVariables,
         binaryThreshold: null,
+        offsetXMm: profile.offsetXMm,
+        offsetYMm: profile.offsetYMm,
       });
     } catch {
       return "";
     }
-  }, [layout, effectiveVariables]);
+  }, [layout, effectiveVariables, profile.offsetXMm, profile.offsetYMm]);
 
   // ---------------------------------------------------------------- 打印
   const doPrint = useCallback(async () => {
@@ -172,16 +186,12 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
     setError(null);
     setLastResult(null);
     try {
-      const profile: PrinterProfile = layout.printer ?? {
-        ...DEFAULT_PRINTER_PROFILE,
-        name: printer.name,
-        channel: printer.suggestedChannel,
-        language: printer.suggestedRawLanguage ?? "tspl",
-      };
       const dataUrl = renderToDataUrl(layout, {
         dpi: profile.dpi,
         variables: effectiveVariables,
         binaryThreshold: profile.threshold,
+        offsetXMm: profile.offsetXMm,
+        offsetYMm: profile.offsetYMm,
       });
       const res = await printLabel({
         printerName: printer.name,
@@ -216,7 +226,7 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
     } finally {
       setBusy(false);
     }
-  }, [layout, printer, effectiveVariables]);
+  }, [layout, printer, effectiveVariables, profile]);
 
   // 粘贴后自动聚焦，并支持 Ctrl+Enter 直接打印
   const onPasteKeyDown = useCallback(
@@ -371,6 +381,13 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
           {showingSample && layout ? (
             <div className="preview-sample-note">
               显示的是模板里的示例数据，粘贴一行真实数据后会替换
+            </div>
+          ) : null}
+          {profile.offsetXMm || profile.offsetYMm ? (
+            <div className="preview-sample-note offset">
+              已应用打印机定位补偿：横向 {profile.offsetXMm > 0 ? "+" : ""}
+              {profile.offsetXMm} mm，纵向 {profile.offsetYMm > 0 ? "+" : ""}
+              {profile.offsetYMm} mm（与实机打印一致）
             </div>
           ) : null}
           {layout?.note ? <div className="hint">{layout.note}</div> : null}

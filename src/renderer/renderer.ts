@@ -21,6 +21,16 @@ export interface RenderOptions {
   overlay?: OverlayOptions;
   /** 白底填充（预览需要，热敏打印时也必须是白底） */
   background?: string;
+  /**
+   * 内容整体偏移（毫米）。
+   *
+   * 用来补偿打印机的机械定位偏差：TSPL 的原点不等于标签左边缘，
+   * 再加上装纸位置差异，同一份位图在不同机器上会整体偏移几毫米。
+   * 位图尺寸不变（仍是标签物理尺寸），只是内容在画布内平移，
+   * 因此驱动通路与原始指令通路的行为完全一致。
+   */
+  offsetXMm?: number;
+  offsetYMm?: number;
 }
 
 export interface OverlayOptions {
@@ -108,11 +118,22 @@ export function renderLayout(
   ctx.fillStyle = options.background ?? "#ffffff";
   ctx.fillRect(0, 0, widthPx, heightPx);
 
+  // 打印机定位补偿：只平移内容，位图尺寸（= 标签物理尺寸）不变。
+  // 超出画布的部分自然被裁掉，这与真机上「内容跑到标签外」的表现一致，
+  // 便于在预览阶段就看出偏移量调过头了。
+  const offsetX = options.offsetXMm ? mmToPx(options.offsetXMm, options.dpi) : 0;
+  const offsetY = options.offsetYMm ? mmToPx(options.offsetYMm, options.dpi) : 0;
+  if (offsetX !== 0 || offsetY !== 0) {
+    ctx.translate(offsetX, offsetY);
+  }
+
   for (const element of layout.elements) {
     drawElement(ctx, element, rc);
   }
 
+  // 叠加层不能跟着内容偏移，否则选中框会与元素错位
   if (options.overlay) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     drawOverlay(ctx, layout, options, widthPx, heightPx);
   }
   ctx.restore();

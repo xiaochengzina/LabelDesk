@@ -174,6 +174,17 @@ export interface PrinterProfile {
   invertBits: boolean;
   /** 驱动通路的纸张名（留空使用打印机默认纸张） */
   paperName?: string;
+  /**
+   * 横向内容偏移（毫米，正数向右）。
+   *
+   * 热敏标签机的 TSPL 坐标原点 (0,0) 是「打印头能打到的位置」，
+   * 并不等于标签纸的左边缘；再加上标签在纸道里可以左右晃动几毫米，
+   * 所以同一份位图在不同机器/装纸状态下会整体偏移。
+   * 这里给一个按打印机保存的补偿量，试打一张就能调准。
+   */
+  offsetXMm: number;
+  /** 纵向内容偏移（毫米，正数向下） */
+  offsetYMm: number;
 }
 
 export const DEFAULT_PRINTER_PROFILE: PrinterProfile = {
@@ -186,6 +197,8 @@ export const DEFAULT_PRINTER_PROFILE: PrinterProfile = {
   copies: 1,
   threshold: 160,
   invertBits: false,
+  offsetXMm: 0,
+  offsetYMm: 0,
 };
 
 /**

@@ -25,6 +25,11 @@ interface Props {
   onClose: () => void;
 }
 
+/** 保留一位小数，避免 ±1 累加后出现 3.0000000000000004 */
+function round1(v: number): number {
+  return Math.round(v * 10) / 10;
+}
+
 export function PrintDialog({ onClose }: Props): JSX.Element {
   const doc = useEditor((s) => s.doc);
   const initial = doc.printer ?? DEFAULT_PRINTER_PROFILE;
@@ -89,11 +94,17 @@ export function PrintDialog({ onClose }: Props): JSX.Element {
   /** 打印预览：按 DPI 渲染并二值化，所见即所打 */
   const previewUrl = useMemo(() => {
     try {
-      return renderToDataUrl(doc, { dpi: 96, variables: doc.variables, binaryThreshold: profile.threshold });
+      return renderToDataUrl(doc, {
+        dpi: 96,
+        variables: doc.variables,
+        binaryThreshold: profile.threshold,
+        offsetXMm: profile.offsetXMm,
+        offsetYMm: profile.offsetYMm,
+      });
     } catch {
       return "";
     }
-  }, [doc, profile.threshold]);
+  }, [doc, profile.threshold, profile.offsetXMm, profile.offsetYMm]);
 
   const doPrint = useCallback(async () => {
     if (!profile.name) {
@@ -108,6 +119,8 @@ export function PrintDialog({ onClose }: Props): JSX.Element {
         dpi: profile.dpi,
         variables: doc.variables,
         binaryThreshold: profile.threshold,
+        offsetXMm: profile.offsetXMm,
+        offsetYMm: profile.offsetYMm,
       });
       const res = await printLabel({
         printerName: profile.name,
@@ -295,6 +308,72 @@ export function PrintDialog({ onClose }: Props): JSX.Element {
                 反转位极性（打出来整张发黑时勾选）
               </label>
             ) : null}
+
+            <div className="section-title">定位补偿</div>
+            <div className="hint">
+              热敏标签机的坐标原点不等于标签左边缘，装纸位置也会左右差几毫米，
+              所以内容常整体偏移。打一张对比后在这里补正：
+              <strong>内容被左边裁掉就把横向调大</strong>，内容偏下就把纵向调小。补偿量随模板保存。
+            </div>
+            <div className="grid-2">
+              <label className="mini-field">
+                <span>横向</span>
+                <input
+                  type="number"
+                  step={0.5}
+                  min={-20}
+                  max={20}
+                  value={profile.offsetXMm}
+                  onChange={(e) => patch({ offsetXMm: Number(e.target.value) })}
+                />
+                <em>mm</em>
+              </label>
+              <label className="mini-field">
+                <span>纵向</span>
+                <input
+                  type="number"
+                  step={0.5}
+                  min={-20}
+                  max={20}
+                  value={profile.offsetYMm}
+                  onChange={(e) => patch({ offsetYMm: Number(e.target.value) })}
+                />
+                <em>mm</em>
+              </label>
+            </div>
+            <div className="button-row">
+              <button
+                className="ghost compact"
+                onClick={() => patch({ offsetXMm: 0, offsetYMm: 0 })}
+                title="回到不补偿的状态"
+              >
+                归零
+              </button>
+              <button
+                className="ghost compact"
+                onClick={() => patch({ offsetXMm: round1(profile.offsetXMm + 1) })}
+              >
+                横向 +1
+              </button>
+              <button
+                className="ghost compact"
+                onClick={() => patch({ offsetXMm: round1(profile.offsetXMm - 1) })}
+              >
+                横向 −1
+              </button>
+              <button
+                className="ghost compact"
+                onClick={() => patch({ offsetYMm: round1(profile.offsetYMm + 1) })}
+              >
+                纵向 +1
+              </button>
+              <button
+                className="ghost compact"
+                onClick={() => patch({ offsetYMm: round1(profile.offsetYMm - 1) })}
+              >
+                纵向 −1
+              </button>
+            </div>
           </div>
 
           <div className="print-preview">
