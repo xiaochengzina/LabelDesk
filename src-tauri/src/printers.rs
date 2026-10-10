@@ -48,8 +48,7 @@ pub enum RawLanguage {
 /// 前端使用的打印机描述。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrinterInfo {
-    pub name: String,
+pub struct PrinterInfo {    pub name: String,
     pub driver_name: String,
     pub port_name: String,
     pub is_default: bool,

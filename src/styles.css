@@ -40,10 +40,19 @@ body {
 
 /* ------------------------------------------------------------------ 布局 */
 
+/* 用 flex 而非 grid：顶部元素数量随模式变化（打标签只有模式栏，设计模式多一条工具栏），
+   flex 能自动让中间区域占满剩余高度，不会因为行数不匹配而错位。 */
 .app {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+
+.workspace,
+.fill-main {
+  flex: 1;
+  min-height: 0;
 }
 
 .workspace {
@@ -874,6 +883,344 @@ input[type="radio"] {
   display: flex;
   gap: 5px;
   flex-shrink: 0;
+}
+
+/* ------------------------------------------------------ 模式切换（顶部） */
+
+.mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 14px;
+  height: 46px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.mode-tabs button {
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 18px;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.mode-tabs button:hover {
+  background: #eef2f8;
+  border-color: transparent;
+}
+
+.mode-tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.mode-tabs button.active:hover {
+  background: #1667cf;
+}
+
+.mode-bar-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------- 打标签工作区 */
+
+.fill-main {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.fill-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(380px, 1fr) minmax(320px, 420px);
+  gap: 1px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.fill-left,
+.fill-right {
+  background: var(--bg);
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.fill-right {
+  background: var(--panel);
+}
+
+.fill-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 2px rgba(20, 30, 50, 0.04);
+}
+
+.fill-card.grow {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.fill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fill-row:last-child {
+  margin-bottom: 0;
+}
+
+.fill-row > label {
+  flex: 0 0 48px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.fill-row > select {
+  flex: 1;
+  min-width: 0;
+}
+
+.paste-area {
+  width: 100%;
+  height: 58px;
+  min-height: 44px;
+  max-height: 140px;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.paste-area.small {
+  min-height: 52px;
+  margin-bottom: 8px;
+}
+
+.fill-placeholder {
+  flex: 1;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.9;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.fill-placeholder strong {
+  color: var(--text);
+}
+
+.preview-sample-note {
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #fff8e1;
+  border: 1px solid #f0dfa8;
+  color: #7a5b00;
+  font-size: 11px;
+  text-align: left;
+  line-height: 1.5;
+}
+
+.fill-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.fill-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  padding: 40px;
+  color: var(--text-dim);
+}
+
+.fill-empty h2 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.fill-empty p {
+  margin: 0;
+  line-height: 1.9;
+  font-size: 13px;
+}
+
+/* 解析结果表 */
+
+.field-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.field-table th,
+.field-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.field-table th {
+  width: 40%;
+  font-weight: 500;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.field-table tr.missing th {
+  color: var(--danger);
+}
+
+.field-table tr.missing td input {
+  border-color: #f0c6c3;
+  background: #fffafa;
+}
+
+.field-table.compact th,
+.field-table.compact td {
+  padding: 3px 6px;
+}
+
+.field-table input,
+.field-table select {
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+/* 预览与打印 */
+
+.preview-card {
+  text-align: center;
+}
+
+.fill-preview {
+  max-width: 100%;
+  max-height: 46vh;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  image-rendering: pixelated;
+  margin-bottom: 8px;
+}
+
+.print-big {
+  padding: 13px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+}
+
+.print-big:hover:not(:disabled) {
+  background: #1667cf;
+}
+
+.print-big:disabled {
+  background: #c3ccd8;
+  border-color: #c3ccd8;
+  color: #fff;
+  opacity: 0.8;
+}
+
+.hint.center {
+  text-align: center;
+}
+
+/* 字段映射编辑表 */
+
+.mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.mapping-table th {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-align: left;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mapping-table td {
+  padding: 3px 4px;
+  vertical-align: middle;
+}
+
+.mapping-table .col-index {
+  width: 20px;
+  text-align: center;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.mapping-table .col-actions {
+  width: 62px;
+  white-space: nowrap;
+}
+
+.mapping-table input,
+.mapping-table select {
+  padding: 3px 5px;
+  font-size: 11.5px;
 }
 
 /* 滚动条 */

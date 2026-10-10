@@ -173,6 +173,49 @@ pub fn layout_path(root: &Path, id: &str) -> PathBuf {
     root.join(format!("{safe}.{LAYOUT_EXT}"))
 }
 
+// ---------------------------------------------------------------------------
+// 应用配置（不随模板保存的本地偏好）
+// ---------------------------------------------------------------------------
+
+const CONFIG_FILE: &str = "config.json";
+
+fn config_path(root: &Path) -> PathBuf {
+    // 放在模板目录的上一级，避免被 `list()` 当成模板文件扫出来
+    root.parent()
+        .map(|p| p.join(CONFIG_FILE))
+        .unwrap_or_else(|| root.join(CONFIG_FILE))
+}
+
+/// 读取应用配置。文件不存在或损坏时返回空对象，绝不因此让应用启动失败。
+pub fn read_config(root: &Path) -> serde_json::Value {
+    let path = config_path(root);
+    match std::fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
+            eprintln!("[LabelDesk] 配置文件损坏，已忽略：{e}");
+            serde_json::json!({})
+        }),
+        Err(_) => serde_json::json!({}),
+    }
+}
+
+/// 写入应用配置（原子写，避免中途崩溃留下半个文件）。
+pub fn write_config(root: &Path, value: &serde_json::Value) -> Result<(), String> {
+    let path = config_path(root);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
+    }
+    let text = serde_json::to_string_pretty(value).map_err(|e| format!("序列化配置失败: {e}"))?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, text.as_bytes()).map_err(|e| format!("写入配置失败: {e}"))?;
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("覆盖旧配置失败: {e}"))?;
+    }
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("保存配置失败: {e}")
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

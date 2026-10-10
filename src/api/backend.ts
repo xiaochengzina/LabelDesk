@@ -20,6 +20,11 @@ export interface PrinterInfo {
   suggestedChannel: "driver" | "raw";
 }
 
+export interface AppConfig {
+  lastTemplateId?: string;
+  lastPrinterName?: string;
+}
+
 export interface LayoutSummary {
   id: string;
   name: string;
@@ -100,12 +105,29 @@ export function listPrinters(): Promise<PrinterInfo[]> {
   return call<PrinterInfo[]>("list_printers");
 }
 
+/** 让后端挑一台最可能可用的打印机（打标签页一键出纸用） */
+export function pickPrinter(preferred?: string | null): Promise<PrinterInfo | null> {
+  return call<PrinterInfo | null>("pick_printer", { preferred: preferred ?? null });
+}
+
 export function printLabel(spec: PrintSpec): Promise<PrintResult> {
   return call<PrintResult>("print_label", { spec });
 }
 
 export function getDiagnostics(): Promise<Diagnostics> {
   return call<Diagnostics>("diagnostics");
+}
+
+// ---------------------------------------------------------------------------
+// 应用配置（记住上次用的模板与打印机）
+// ---------------------------------------------------------------------------
+
+export function readConfig(): Promise<AppConfig> {
+  return call<AppConfig>("read_config");
+}
+
+export function writeConfig(config: AppConfig): Promise<void> {
+  return call<void>("write_config", { config });
 }
 
 // ---------------------------------------------------------------------------

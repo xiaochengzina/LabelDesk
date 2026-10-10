@@ -21,6 +21,7 @@ import {
   useEditor,
 } from "../state/store";
 import { fmt } from "../model/units";
+import { FieldMappingEditor } from "./FieldMappingEditor";
 
 type Tab = "elements" | "layers" | "page";
 
@@ -368,6 +369,8 @@ function PageSettings(): JSX.Element {
           onChange={(e) => setLayoutMeta({ note: e.target.value })}
         />
       </div>
+
+      <FieldMappingEditor />
     </>
   );
 }

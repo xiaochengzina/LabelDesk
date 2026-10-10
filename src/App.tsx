@@ -1,5 +1,10 @@
 /**
- * 应用外壳：工具栏 + 三栏布局 + 状态栏 + 模态框。
+ * 应用外壳：顶部模式切换 + 两种视图。
+ *
+ * - **打标签**（默认首屏）：操作员用。粘贴一行数据 → 核对 → 打印，不需要理解标签设计。
+ * - **设计模板**：管理员用。可视化布局设计、定义变量、配置字段映射。
+ *
+ * 设计器整体作为独立视图挂载，两边的状态互不干扰（打标签页有自己的模板加载逻辑）。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -11,6 +16,7 @@ import { PropertiesPanel } from "./components/PropertiesPanel";
 import { PrintDialog } from "./components/PrintDialog";
 import { TemplateManager } from "./components/TemplateManager";
 import { VariablePanel } from "./components/VariablePanel";
+import { FillPrintPanel } from "./components/FillPrintPanel";
 import { exportLayout, importLayout, readLayout, saveLayout } from "./api/backend";
 import {
   alignElements,
@@ -27,7 +33,64 @@ import {
 import { createLayout, type LabelLayout } from "./model/types";
 import { renderToDataUrl } from "./renderer/renderer";
 
+type Mode = "print" | "design";
+
 export function App(): JSX.Element {
+  const [mode, setMode] = useState<Mode>("print");
+
+  return (
+    <div className="app">
+      <nav className="mode-bar">
+        <span className="app-title">LabelDesk</span>
+        <div className="mode-tabs">
+          <button
+            className={mode === "print" ? "active" : ""}
+            onClick={() => setMode("print")}
+            title="日常打标签：粘贴一行数据即可出标签"
+          >
+            打标签
+          </button>
+          <button
+            className={mode === "design" ? "active" : ""}
+            onClick={() => setMode("design")}
+            title="管理员：设计布局、定义变量与字段映射"
+          >
+            设计模板
+          </button>
+        </div>
+        <div className="mode-bar-hint">
+          {mode === "print"
+            ? "在表格里选中一行 → Ctrl+C → 在下面 Ctrl+V → 打印"
+            : "设计好后记得「保存」，并在「字段映射」里配好每一列对应哪个变量"}
+        </div>
+      </nav>
+
+      {mode === "print" ? (
+        <PrintWorkspace onOpenDesigner={() => setMode("design")} />
+      ) : (
+        <DesignWorkspace />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 打标签
+// ---------------------------------------------------------------------------
+
+function PrintWorkspace({ onOpenDesigner }: { onOpenDesigner: () => void }): JSX.Element {
+  return (
+    <main className="fill-main">
+      <FillPrintPanel onOpenDesigner={onOpenDesigner} />
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 设计模板
+// ---------------------------------------------------------------------------
+
+function DesignWorkspace(): JSX.Element {
   const doc = useEditor((s) => s.doc);
   const selectedIds = useEditor((s) => s.selectedIds);
   const zoom = useEditor((s) => s.zoom);
@@ -39,7 +102,7 @@ export function App(): JSX.Element {
 
   const [showPrint, setShowPrint] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [showVariables, setShowVariables] = useState(true);
+  const [showVariables, setShowVariables] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // 状态提示自动消失
@@ -58,6 +121,19 @@ export function App(): JSX.Element {
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
+  // Ctrl+S 保存
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void save();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const newTemplate = useCallback(() => {
@@ -165,15 +241,8 @@ export function App(): JSX.Element {
   );
 
   return (
-    <div className="app">
+    <>
       <header className="toolbar">
-        <div className="toolbar-group">
-          <span className="app-title">
-            LabelDesk
-            {dirty ? <em className="dirty-dot" title="有未保存修改" /> : null}
-          </span>
-        </div>
-
         <div className="toolbar-group">
           <button onClick={newTemplate} title="新建模板">
             新建
@@ -182,7 +251,7 @@ export function App(): JSX.Element {
             打开
           </button>
           <button onClick={save} disabled={busy} title="保存到应用数据目录 (Ctrl+S)">
-            保存
+            保存{dirty ? " *" : ""}
           </button>
           <button onClick={saveAs} disabled={busy} title="另存为新模板">
             另存为
@@ -214,12 +283,12 @@ export function App(): JSX.Element {
               ["hdistribute", "水平等距", "⇹"],
               ["vdistribute", "垂直等距", "⇳"],
             ] as const
-          ).map(([mode, label, glyph]) => (
+          ).map(([alignMode, label, glyph]) => (
             <button
-              key={mode}
+              key={alignMode}
               className="ghost compact align-button"
               disabled={selectedIds.length < 2}
-              onClick={() => alignElements(selectedIds, mode)}
+              onClick={() => alignElements(selectedIds, alignMode)}
               title={label}
               aria-label={label}
             >
@@ -262,7 +331,7 @@ export function App(): JSX.Element {
 
         <div className="toolbar-group">
           <button className="primary" onClick={() => setShowPrint(true)}>
-            打印…
+            打印测试…
           </button>
         </div>
       </header>
@@ -293,6 +362,6 @@ export function App(): JSX.Element {
 
       {showPrint ? <PrintDialog onClose={() => setShowPrint(false)} /> : null}
       {showTemplates ? <TemplateManager onClose={() => setShowTemplates(false)} /> : null}
-    </div>
+    </>
   );
 }

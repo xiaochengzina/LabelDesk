@@ -15,9 +15,12 @@
     "verify:1d": "node scripts/verify-1d.mjs",
     "verify:qr": "node scripts/verify-qr.mjs",
     "verify:variables": "node --import ./scripts/loader-register.mjs scripts/verify-variables.mjs",
+    "verify:fill": "node --import ./scripts/loader-register.mjs scripts/verify-fill.mjs",
     "verify:dpi": "node --import ./scripts/loader-register.mjs scripts/verify-dpi.mjs",
     "verify:render": "node --import ./scripts/loader-register.mjs scripts/e2e-print.mjs",
-    "verify:all": "npm run typecheck && npm run verify:1d && npm run verify:qr && npm run verify:variables && npm run verify:dpi"
+    "verify:all": "npm run typecheck && npm run verify:1d && npm run verify:qr && npm run verify:variables && npm run verify:fill && npm run verify:dpi",
+    "sample:template": "node scripts/make-sample-template.mjs",
+    "sample:preview": "node --import ./scripts/loader-register.mjs scripts/preview-template.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.2",

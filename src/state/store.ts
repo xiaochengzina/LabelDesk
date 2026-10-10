@@ -271,6 +271,11 @@ export function setVariables(variables: Record<string, string>): void {
   commit((doc) => ({ ...doc, variables }));
 }
 
+/** 设置「打标签」页的字段映射（管理员配置） */
+export function setTemplateFields(fields: LabelLayout["fields"]): void {
+  commit((doc) => ({ ...doc, fields: fields ?? [] }));
+}
+
 export function setLayoutMeta(patch: Partial<Pick<LabelLayout, "name" | "note" | "printer">>): void {
   commit((doc) => ({ ...doc, ...patch }));
 }

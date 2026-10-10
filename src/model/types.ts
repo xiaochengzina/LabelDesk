@@ -188,6 +188,23 @@ export const DEFAULT_PRINTER_PROFILE: PrinterProfile = {
   invertBits: false,
 };
 
+/**
+ * 模板字段定义（供「打标签」页按列位置解析用户粘贴的一行数据）。
+ *
+ * 使用场景：操作员从 Excel/WPS 复制**一行**（只有值、没有表头），
+ * 因此只能靠列的位置对应。这里的数组顺序 = 粘贴内容的列顺序。
+ */
+export interface TemplateField {
+  /** 列在粘贴内容中的位置（0 开始），等于数组下标；显式存下来便于将来支持乱序 */
+  column: number;
+  /** 该列的显示名，例如「笔记本型号」。用于向操作员展示解析结果 */
+  label: string;
+  /** 对应模板里的哪个变量名（不含花括号） */
+  variable: string;
+  /** 示例值，方便管理员自测映射是否正确 */
+  sample: string;
+}
+
 export interface LabelLayout {
   version: number;
   id: string;
@@ -200,8 +217,21 @@ export interface LabelLayout {
   printer?: PrinterProfile;
   /** 变量默认值，可在打印时覆盖 */
   variables: Record<string, string>;
+  /**
+   * 「打标签」页的字段映射：按顺序对应操作员粘贴的一行数据。
+   * 未配置时该模板不能在快速打标签页使用（只提示，不阻塞设计）。
+   */
+  fields?: TemplateField[];
   createdAtMs: number;
   updatedAtMs: number;
+}
+
+/** 应用级配置（与模板无关的本地偏好） */
+export interface AppConfig {
+  /** 操作员上次使用的模板，启动时自动选中 */
+  lastTemplateId: string;
+  /** 上次使用的打印机；为空时自动挑默认标签机 */
+  lastPrinterName: string;
 }
 
 export const DEFAULT_SETTINGS: LabelSettings = {
@@ -227,10 +257,16 @@ export function createLayout(name = "未命名标签", settings?: Partial<LabelS
     elements: [],
     printer: undefined,
     variables: {},
+    fields: [],
     createdAtMs: now,
     updatedAtMs: now,
   };
 }
+
+export const DEFAULT_APP_CONFIG: AppConfig = {
+  lastTemplateId: "",
+  lastPrinterName: "",
+};
 
 let idCounter = 0;
 /** 生成稳定且可读的元素 id（避免依赖 crypto，方便测试）。 */

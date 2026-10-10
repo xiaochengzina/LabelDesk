@@ -139,6 +139,52 @@ struct RenderRequest {
     variables: Option<serde_json::Value>,
 }
 
+// ---------------------------------------------------------------------------
+// 应用配置
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn read_config(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
+    let st = state.lock().map_err(|_| "内部状态锁定失败".to_string())?;
+    Ok(store::read_config(st.layouts()))
+}
+
+#[tauri::command]
+fn write_config(
+    config: serde_json::Value,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let st = state.lock().map_err(|_| "内部状态锁定失败".to_string())?;
+    store::write_config(st.layouts(), &config)
+}
+
+/// 选一台「最可能可用」的打印机。
+///
+/// 打标签页的目标是让操作员一键出纸，因此这里集中处理挑选逻辑：
+/// 优先已保存过的、其次默认标签机、再次任意标签机、最后系统默认打印机。
+/// `preferred` 为用户上次选择的名字，命中即直接返回。
+#[tauri::command]
+fn pick_printer(
+    preferred: Option<String>,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<Option<printers::PrinterInfo>, String> {
+    let st = state.lock().map_err(|_| "内部状态锁定失败".to_string())?;
+    let list = printers::list_printers(&st.printer_script)?;
+    if let Some(name) = preferred.as_deref() {
+        if let Some(found) = list.iter().find(|p| p.name == name) {
+            return Ok(Some(found.clone()));
+        }
+    }
+    let chosen = list
+        .iter()
+        .find(|p| p.is_default && p.looks_like_label_printer)
+        .or_else(|| list.iter().find(|p| p.looks_like_label_printer))
+        .or_else(|| list.iter().find(|p| p.is_default))
+        .or_else(|| list.first())
+        .cloned();
+    Ok(chosen)
+}
+
 /// 预留：后端侧渲染导出（当前版本由前端画布完成，此命令用于后续批量/无人值守导出）。
 #[tauri::command]
 fn render_layout(req: RenderRequest) -> Result<serde_json::Value, String> {
@@ -207,6 +253,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_printers,
             print_label,
+            pick_printer,
             list_layouts,
             read_layout,
             save_layout,
@@ -214,6 +261,8 @@ pub fn run() {
             export_layout,
             import_layout,
             render_layout,
+            read_config,
+            write_config,
             diagnostics,
         ])
         .run(tauri::generate_context!())
