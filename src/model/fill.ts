@@ -28,7 +28,7 @@ export interface FieldValue {
 
 export interface FillResult {
   parsed: ParsedRow;
-  /** 与模板 fields 一一对应的结果（含缺失项） */
+  /** 与模板 fields 一一对应的结果（含缺失项与被忽略的列） */
   values: FieldValue[];
   /** 变量名 → 值，可直接喂给渲染器 */
   variables: Record<string, string>;
@@ -108,7 +108,9 @@ export function buildFill(layout: LabelLayout, raw: string): FillResult | null {
 
   const variables: Record<string, string> = {};
   for (const item of values) {
-    if (item.field.variable) variables[item.field.variable] = item.value;
+    // skip 列占用位置但不填变量；variable 为空同样视为忽略
+    if (item.field.skip || !item.field.variable) continue;
+    variables[item.field.variable] = item.value;
   }
 
   const warnings: string[] = [];
@@ -119,7 +121,8 @@ export function buildFill(layout: LabelLayout, raw: string): FillResult | null {
     );
   } else if (parsed.cells.length > fields.length) {
     warnings.push(
-      `粘贴内容有 ${parsed.cells.length} 列，模板只用前 ${fields.length} 列，多出的 ${parsed.cells.length - fields.length} 列已忽略。`,
+      `粘贴内容有 ${parsed.cells.length} 列，模板只用前 ${fields.length} 列，多出的 ${parsed.cells.length - fields.length} 列已忽略。` +
+        `如果表格前面多了序号之类的列，请在「字段映射」里把那几列标记为「忽略」。`,
     );
   }
   if (parsed.separator === "single" && fields.length > 1) {
@@ -127,14 +130,16 @@ export function buildFill(layout: LabelLayout, raw: string): FillResult | null {
       "没有检测到制表符或逗号分隔，整段被当成第一列。请回表格里重新复制一整行（不是单个单元格）。",
     );
   }
-  const emptyFields = values.filter((v) => !v.missing && v.value === "");
+  const emptyFields = values.filter(
+    (v) => !v.missing && !v.field.skip && v.field.variable && v.value === "",
+  );
   if (emptyFields.length > 0) {
     warnings.push(
       `这些列是空的：${emptyFields.map((v) => v.field.label || v.field.variable).join("、")}`,
     );
   }
 
-  const filledAny = values.some((v) => v.value !== "");
+  const filledAny = values.some((v) => !v.field.skip && v.value !== "");
   return { parsed, values, variables, warnings, ok: filledAny };
 }
 

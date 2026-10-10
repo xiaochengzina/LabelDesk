@@ -60,6 +60,13 @@ export function FieldMappingEditor(): JSX.Element {
     ]);
   };
 
+  const toggleSkip = (index: number) => {
+    const field = fields[index];
+    const nextSkip = !field.skip;
+    // 标记为忽略时清空变量与示例值，避免残留造成误解
+    update(index, nextSkip ? { skip: true, variable: "", sample: "" } : { skip: false });
+  };
+
   const probeResult = probe.trim() ? buildFill(doc, probe) : null;
 
   return (
@@ -81,12 +88,13 @@ export function FieldMappingEditor(): JSX.Element {
               <th>#</th>
               <th>列名（给人看）</th>
               <th>对应变量</th>
+              <th>忽略</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {fields.map((field, index) => (
-              <tr key={index}>
+              <tr key={index} className={field.skip ? "skipped" : ""}>
                 <td className="col-index">{index + 1}</td>
                 <td>
                   <input
@@ -97,17 +105,29 @@ export function FieldMappingEditor(): JSX.Element {
                   />
                 </td>
                 <td>
-                  <select value={field.variable} onChange={(e) => update(index, { variable: e.target.value })}>
-                    <option value="">（未选择）</option>
-                    {availableVariables.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                    {field.variable && !availableVariables.includes(field.variable) ? (
-                      <option value={field.variable}>{field.variable}（模板中未使用）</option>
-                    ) : null}
-                  </select>
+                  {field.skip ? (
+                    <span className="hint-inline">（此列跳过）</span>
+                  ) : (
+                    <select value={field.variable} onChange={(e) => update(index, { variable: e.target.value })}>
+                      <option value="">（未选择）</option>
+                      {availableVariables.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                      {field.variable && !availableVariables.includes(field.variable) ? (
+                        <option value={field.variable}>{field.variable}（模板中未使用）</option>
+                      ) : null}
+                    </select>
+                  )}
+                </td>
+                <td className="col-skip">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(field.skip)}
+                    title="勾选后这一列只占位置、不填入变量。表格里的序号/复选框/备注列用它跳过。"
+                    onChange={() => toggleSkip(index)}
+                  />
                 </td>
                 <td className="col-actions">
                   <button className="icon-button" title="上移" onClick={() => move(index, -1)}>
@@ -125,6 +145,11 @@ export function FieldMappingEditor(): JSX.Element {
           </tbody>
         </table>
       )}
+
+      <div className="hint">
+        表格里如果有序号、复选框、备注等不需要印上标签的列，把对应位置勾上
+        <strong>「忽略」</strong>——它仍然占用列位置，但不会填入变量。
+      </div>
 
       <div className="button-row">
         <button onClick={add}>添加一列</button>

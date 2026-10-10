@@ -199,10 +199,18 @@ export interface TemplateField {
   column: number;
   /** 该列的显示名，例如「笔记本型号」。用于向操作员展示解析结果 */
   label: string;
-  /** 对应模板里的哪个变量名（不含花括号） */
+  /** 对应模板里的哪个变量名（不含花括号）。为空的列会被忽略 */
   variable: string;
   /** 示例值，方便管理员自测映射是否正确 */
   sample: string;
+  /**
+   * 忽略该列。
+   *
+   * 实际表格常带序号、复选框、备注等不需要印上标签的列。
+   * 由于是按列位置解析，中间夹一列就会让后面全部错位，
+   * 因此必须能显式声明「这一列跳过」——它占用列位置，但不填入任何变量。
+   */
+  skip?: boolean;
 }
 
 export interface LabelLayout {

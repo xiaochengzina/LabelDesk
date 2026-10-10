@@ -1217,6 +1217,20 @@ input[type="radio"] {
   white-space: nowrap;
 }
 
+.mapping-table .col-skip {
+  width: 34px;
+  text-align: center;
+}
+
+.mapping-table tr.skipped td {
+  background: var(--panel-2);
+}
+
+.mapping-table tr.skipped .col-index {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
 .mapping-table input,
 .mapping-table select {
   padding: 3px 5px;
