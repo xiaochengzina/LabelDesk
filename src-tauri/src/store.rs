@@ -104,17 +104,42 @@ pub fn write_raw(root: &Path, id: &str, json: &str) -> Result<String, String> {
     let safe = crate::util::sanitize_file_stem(id);
     let path = root.join(format!("{safe}.{LAYOUT_EXT}"));
 
-    // 原子写：先写临时文件再替换，避免中途崩溃导致模板损坏
     let tmp = root.join(format!(".{safe}.{}.tmp", crate::util::now_millis()));
     std::fs::write(&tmp, json.as_bytes()).map_err(|e| format!("写入模板失败: {e}"))?;
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("覆盖旧模板失败: {e}"))?;
+
+    // 覆盖前先留一份备份：万一后续改名失败，还能把原文件放回去，
+    // 绝不出现「原文件已删、新文件没到位」的空档。
+    let backup = root.join(format!(".{safe}.{}.bak", crate::util::now_millis()));
+    let existed = path.exists();
+    if existed {
+        std::fs::rename(&path, &backup).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("备份旧模板失败: {e}")
+        })?;
     }
-    std::fs::rename(&tmp, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("保存模板失败: {e}")
-    })?;
-    Ok(path.to_string_lossy().to_string())
+
+    match std::fs::rename(&tmp, &path) {
+        Ok(()) => {
+            // 写入成功，备份已无用
+            if existed {
+                let _ = std::fs::remove_file(&backup);
+            }
+            Ok(path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            // 把原文件放回去，保证用户至少不会丢模板
+            let restored = if existed {
+                std::fs::rename(&backup, &path).is_ok()
+            } else {
+                false
+            };
+            Err(format!(
+                "保存模板失败: {e}{}",
+                if restored { "（原模板已还原）" } else { "" }
+            ))
+        }
+    }
 }
 
 pub fn delete(root: &Path, id: &str) -> Result<(), String> {
@@ -207,13 +232,36 @@ pub fn write_config(root: &Path, value: &serde_json::Value) -> Result<(), String
     let text = serde_json::to_string_pretty(value).map_err(|e| format!("序列化配置失败: {e}"))?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, text.as_bytes()).map_err(|e| format!("写入配置失败: {e}"))?;
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("覆盖旧配置失败: {e}"))?;
+
+    // 与模板同样处理：覆盖前先备份，改名失败就把原文件放回去
+    let backup = path.with_extension("json.bak");
+    let existed = path.exists();
+    if existed {
+        std::fs::rename(&path, &backup).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("备份旧配置失败: {e}")
+        })?;
     }
-    std::fs::rename(&tmp, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("保存配置失败: {e}")
-    })
+    match std::fs::rename(&tmp, &path) {
+        Ok(()) => {
+            if existed {
+                let _ = std::fs::remove_file(&backup);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            let restored = if existed {
+                std::fs::rename(&backup, &path).is_ok()
+            } else {
+                false
+            };
+            Err(format!(
+                "保存配置失败: {e}{}",
+                if restored { "（原配置已还原）" } else { "" }
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -300,6 +348,39 @@ mod tests {
         let listed = list(&root).unwrap();
         assert_eq!(listed.len(), 2, "损坏文件也要列出，只是标记为损坏");
         assert!(listed.iter().any(|l| l.name.contains("损坏")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 覆盖保存后不应留下 .tmp / .bak 垃圾文件
+    #[test]
+    fn overwrite_leaves_no_temp_files() {
+        let root = temp_root("no-temp");
+        write_raw(&root, "标签", r#"{"name":"第一版","version":1}"#).unwrap();
+        write_raw(&root, "标签", r#"{"name":"第二版","version":1}"#).unwrap();
+
+        let leftovers: Vec<String> = std::fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.ends_with(".tmp") || n.ends_with(".bak"))
+            .collect();
+        assert!(leftovers.is_empty(), "残留临时文件: {leftovers:?}");
+
+        let text = read_raw(&root, "标签").unwrap();
+        assert!(text.contains("第二版"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 覆盖保存必须真的替换内容，而不是变成两个文件
+    #[test]
+    fn overwrite_replaces_in_place() {
+        let root = temp_root("replace");
+        write_raw(&root, "标签", r#"{"name":"旧","version":1}"#).unwrap();
+        write_raw(&root, "标签", r#"{"name":"新","version":1}"#).unwrap();
+
+        let list = list(&root).unwrap();
+        assert_eq!(list.len(), 1, "覆盖保存不应产生额外模板: {list:?}");
+        assert!(read_raw(&root, "标签").unwrap().contains("新"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }
