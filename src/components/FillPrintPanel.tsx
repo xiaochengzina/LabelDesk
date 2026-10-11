@@ -304,7 +304,7 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
           ) : null}
         </div>
 
-        <div className="fill-card grow">
+        <div className="fill-card">
           <div className="fill-card-title">
             粘贴一行数据
             <span className="hint-inline">在表格里选中一台电脑那一行，Ctrl+C，然后在这里 Ctrl+V</span>

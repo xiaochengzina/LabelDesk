@@ -20,6 +20,13 @@ export interface EditorState {
   hoverId: string | null;
   /** 视图缩放（仅影响显示，不影响输出） */
   zoom: number;
+  /**
+   * 是否自动让标签适应画布可视区。
+   *
+   * 标签通常只有几十毫米，在宽屏下 100% 缩放会显得很小、周围全是空白，
+   * 所以默认开启自适应；一旦用户手动缩放就自动关闭，避免「我刚调好又被改回去」。
+   */
+  autoFit: boolean;
   /** 是否处于「适应内容」自动布局状态等 UI 提示 */
   status: { text: string; kind: "info" | "error" | "success" } | null;
   /** 文档是否有未保存修改 */
@@ -40,6 +47,7 @@ let state: EditorState = {
   selectedIds: [],
   hoverId: null,
   zoom: 1,
+  autoFit: true,
   status: null,
   dirty: false,
   past: [],
@@ -197,8 +205,22 @@ export function setHover(id: string | null): void {
   setState({ hoverId: id });
 }
 
+/** 手动缩放：同时关闭自动适应，尊重用户的显式选择 */
 export function setZoom(zoom: number): void {
-  setState({ zoom: Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom)) });
+  setState({ zoom: clampZoom(zoom), autoFit: false });
+}
+
+/** 由画布根据可视区计算出的缩放（不改变 autoFit 标志） */
+export function setFitZoom(zoom: number): void {
+  setState({ zoom: clampZoom(zoom) });
+}
+
+export function setAutoFit(enabled: boolean): void {
+  setState({ autoFit: enabled });
+}
+
+function clampZoom(zoom: number): number {
+  return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
 }
 
 // ---------------------------------------------------------------------------

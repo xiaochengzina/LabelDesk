@@ -26,6 +26,7 @@ import {
   loadDocument,
   markSaved,
   redo,
+  setAutoFit,
   setStatus,
   setZoom,
   undo,
@@ -133,6 +134,7 @@ function DesignWorkspace(): JSX.Element {
   const doc = useEditor((s) => s.doc);
   const selectedIds = useEditor((s) => s.selectedIds);
   const zoom = useEditor((s) => s.zoom);
+  const autoFit = useEditor((s) => s.autoFit);
   const dirty = useEditor((s) => s.dirty);
   const status = useEditor((s) => s.status);
   const templateId = useEditor((s) => s.templateId);
@@ -365,7 +367,7 @@ function DesignWorkspace(): JSX.Element {
           ))}
         </div>
 
-        <div className="toolbar-spacer" />
+        <div className="toolbar-sep" />
 
         <div className="toolbar-group">
           <button className="ghost compact" onClick={() => setZoom(zoom / 1.25)} title="缩小">
@@ -375,7 +377,15 @@ function DesignWorkspace(): JSX.Element {
           <button className="ghost compact" onClick={() => setZoom(zoom * 1.25)} title="放大">
             <Icon name="zoom-in" size={15} />
           </button>
-          <button className="ghost compact" onClick={() => setZoom(1)} title="恢复 100%">
+          <button
+            className={autoFit ? "ghost compact active" : "ghost compact"}
+            onClick={() => setAutoFit(true)}
+            title="让标签自动适应画布可视区（改窗口大小会跟着变）"
+          >
+            <Icon name="maximize" size={15} />
+            适应
+          </button>
+          <button className="ghost compact" onClick={() => setZoom(1)} title="按设计基准显示（100%）">
             1:1
           </button>
         </div>
@@ -395,16 +405,16 @@ function DesignWorkspace(): JSX.Element {
             <Icon name="file-up" size={15} />
             导出模板
           </button>
-          <button className="ghost" onClick={importTemplate}>
-            <Icon name="upload" size={15} />
-            导入模板
-          </button>
         </div>
 
         <div className="toolbar-group">
           <button className="primary" onClick={() => setShowPrint(true)}>
             <Icon name="printer" size={15} />
             打印测试…
+          </button>
+          <button className="ghost" onClick={importTemplate} title="从 JSON 文件导入模板">
+            <Icon name="upload" size={15} />
+            导入模板
           </button>
         </div>
       </header>
@@ -438,3 +448,4 @@ function DesignWorkspace(): JSX.Element {
     </>
   );
 }
+

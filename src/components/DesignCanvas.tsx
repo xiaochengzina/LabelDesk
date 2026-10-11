@@ -28,6 +28,7 @@ import {
   removeElements,
   select,
   selectAll,
+  setFitZoom,
   setHover,
   setZoom,
   toggleSelected,
@@ -60,6 +61,7 @@ export function DesignCanvas(): JSX.Element {
   const selectedIds = useEditor((s) => s.selectedIds);
   const hoverId = useEditor((s) => s.hoverId);
   const zoom = useEditor((s) => s.zoom);
+  const autoFit = useEditor((s) => s.autoFit);
   const baseRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -476,6 +478,33 @@ export function DesignCanvas(): JSX.Element {
     [zoom],
   );
 
+  /**
+   * 让标签适应可视区。
+   *
+   * 标签通常只有几十毫米，在宽屏下 100% 会显得很小、四周大片空白。
+   * 这里按「画布可视区 + 一点留白」反算缩放，并限制在 0.4–3 倍之间：
+   * 上限避免小标签被放得过分夸张，下限避免大标签缩到看不清。
+   */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !autoFit) return;
+
+    const recompute = () => {
+      const availW = container.clientWidth - 56;
+      const availH = container.clientHeight - 76;
+      if (availW <= 0 || availH <= 0) return;
+      const fit = Math.min(availW / widthPx, availH / heightPx);
+      const next = Math.max(0.4, Math.min(3, fit));
+      if (Math.abs(next - getState().zoom) > 0.01) setFitZoom(next);
+    };
+
+    recompute();
+    // 窗口或侧栏尺寸变化时重算（侧栏宽度是布局的关键变量）
+    const observer = new ResizeObserver(recompute);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [autoFit, widthPx, heightPx]);
+
   const displayWidth = Math.round(widthPx * zoom);
   const displayHeight = Math.round(heightPx * zoom);
 
@@ -483,6 +512,7 @@ export function DesignCanvas(): JSX.Element {
     <div className="canvas-area" ref={containerRef} onWheel={onWheel}>
       <div className="canvas-hint">
         标签 {doc.settings.widthMm} × {doc.settings.heightMm} mm · 缩放 {Math.round(zoom * 100)}%
+        {autoFit ? "（自动适应）" : ""}
         {" · Ctrl+滚轮缩放，Alt 拖动忽略网格吸附"}
       </div>
       <div className="canvas-scroll">

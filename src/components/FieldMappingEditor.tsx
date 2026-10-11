@@ -83,34 +83,44 @@ export function FieldMappingEditor(): JSX.Element {
           <strong>第几列对应哪个变量</strong>。
         </div>
       ) : (
-        <table className="mapping-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>列名（给人看）</th>
-              <th>对应变量</th>
-              <th>忽略</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {fields.map((field, index) => (
-              <tr key={index} className={field.skip ? "skipped" : ""}>
-                <td className="col-index">{index + 1}</td>
-                <td>
-                  <input
-                    type="text"
-                    value={field.label}
-                    placeholder="如：笔记本型号"
-                    onChange={(e) => update(index, { label: e.target.value })}
-                  />
-                </td>
-                <td>
-                  {field.skip ? (
-                    <span className="hint-inline">（此列跳过）</span>
-                  ) : (
-                    <select value={field.variable} onChange={(e) => update(index, { variable: e.target.value })}>
-                      <option value="">（未选择）</option>
+        <div className="mapping-list">
+          {fields.map((field, index) => (
+            <div key={index} className={field.skip ? "mapping-row skipped" : "mapping-row"}>
+              <div className="mapping-row-main">
+                <span className="mapping-index">{index + 1}</span>
+                <input
+                  type="text"
+                  className="mapping-label"
+                  value={field.label}
+                  placeholder="列名，如：笔记本型号"
+                  onChange={(e) => update(index, { label: e.target.value })}
+                />
+                <button className="icon-button" title="上移" onClick={() => move(index, -1)}>
+                  <Icon name="chevron-up" size={14} />
+                </button>
+                <button className="icon-button" title="下移" onClick={() => move(index, 1)}>
+                  <Icon name="chevron-down" size={14} />
+                </button>
+                <button className="icon-button" title="删除这一列" onClick={() => remove(index)}>
+                  <Icon name="trash" size={14} />
+                </button>
+              </div>
+              <div className="mapping-row-sub">
+                <label className="check-row skip-toggle" title="勾选后这一列只占位置、不填入变量">
+                  <input type="checkbox" checked={Boolean(field.skip)} onChange={() => toggleSkip(index)} />
+                  忽略
+                </label>
+                {field.skip ? (
+                  <span className="hint-inline">这一列会跳过，不填入任何变量</span>
+                ) : (
+                  <>
+                    <span className="arrow">→</span>
+                    <select
+                      className="mapping-variable"
+                      value={field.variable}
+                      onChange={(e) => update(index, { variable: e.target.value })}
+                    >
+                      <option value="">（未选择变量）</option>
                       {availableVariables.map((v) => (
                         <option key={v} value={v}>
                           {v}
@@ -120,31 +130,12 @@ export function FieldMappingEditor(): JSX.Element {
                         <option value={field.variable}>{field.variable}（模板中未使用）</option>
                       ) : null}
                     </select>
-                  )}
-                </td>
-                <td className="col-skip">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(field.skip)}
-                    title="勾选后这一列只占位置、不填入变量。表格里的序号/复选框/备注列用它跳过。"
-                    onChange={() => toggleSkip(index)}
-                  />
-                </td>
-                <td className="col-actions">
-                  <button className="icon-button" title="上移" onClick={() => move(index, -1)}>
-                    <Icon name="chevron-up" size={14} />
-                  </button>
-                  <button className="icon-button" title="下移" onClick={() => move(index, 1)}>
-                    <Icon name="chevron-down" size={14} />
-                  </button>
-                  <button className="icon-button" title="删除" onClick={() => remove(index)}>
-                    <Icon name="trash" size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       <div className="hint">

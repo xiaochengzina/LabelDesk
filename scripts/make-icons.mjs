@@ -64,6 +64,7 @@ const ICONS = {
   // 视图与打印
   ZoomInIcon: "zoom-in",
   ZoomOutIcon: "zoom-out",
+  FitIcon: "maximize",
   PrinterIcon: "printer",
   SettingsIcon: "settings-2",
   VariableIcon: "variable",
