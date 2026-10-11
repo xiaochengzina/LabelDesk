@@ -23,6 +23,15 @@ export interface PrinterInfo {
 export interface AppConfig {
   lastTemplateId?: string;
   lastPrinterName?: string;
+  /** 用户是否已就「开机启动」做过选择（首次运行由后端默认开启并置位） */
+  autostartDecided?: boolean;
+  autostartEnabled?: boolean;
+}
+
+/** 开机启动状态 */
+export interface AutostartStatus {
+  enabled: boolean;
+  decided: boolean;
 }
 
 export interface LayoutSummary {
@@ -128,6 +137,19 @@ export function readConfig(): Promise<AppConfig> {
 
 export function writeConfig(config: AppConfig): Promise<void> {
   return call<void>("write_config", { config });
+}
+
+// ---------------------------------------------------------------------------
+// 开机启动
+// ---------------------------------------------------------------------------
+
+export function autostartStatus(): Promise<AutostartStatus> {
+  return call<AutostartStatus>("autostart_status");
+}
+
+/** 开关开机启动。后端会同时记下「用户已做选择」，之后不再套用默认值。 */
+export function setAutostart(enabled: boolean): Promise<AutostartStatus> {
+  return call<AutostartStatus>("set_autostart", { enabled });
 }
 
 // ---------------------------------------------------------------------------

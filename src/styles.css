@@ -892,6 +892,26 @@ input[type="radio"] {
   width: min(680px, 100%);
 }
 
+.settings-dialog {
+  width: min(520px, 100%);
+}
+
+/* 设置按钮：紧挨模式栏提示文字之前，不抢主操作的注意力 */
+.settings-button {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* 有设置按钮时，提示文字不再需要自己顶到右边 */
+.mode-bar .settings-button + .mode-bar-hint {
+  margin-left: 12px;
+}
+
+.setting-row {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
 .modal-header {
   display: flex;
   align-items: center;

@@ -67,6 +67,7 @@ const ICONS = {
   FitIcon: "maximize",
   PrinterIcon: "printer",
   SettingsIcon: "settings-2",
+  PowerIcon: "power",
   VariableIcon: "variable",
   // 状态
   CloseIcon: "x",

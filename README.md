@@ -34,6 +34,7 @@
 - [环境要求](#环境要求)
 - [快速开始](#快速开始)
 - [日常使用：打标签](#日常使用打标签)
+- [托盘与开机启动](#托盘与开机启动)
 - [管理员：设计模板与字段映射](#管理员设计模板与字段映射)
 - [打印通路说明](#打印通路说明)
   - [打印位置有偏差怎么办](#打印位置有偏差怎么办)
@@ -164,6 +165,58 @@ cargo run --example print_test -- "Deli DL-888D(NEW)" driver   # 指定打印机
 | 一次复制了多行 | 只用第一行，并提示 |
 
 内容开头的 BOM、全角空格会被自动清理。
+
+---
+
+## 托盘与开机启动
+
+程序会**常驻系统托盘**（托盘图标），关闭窗口后如果想再用，从托盘或桌面图标重新打开即可。
+
+### 点关闭按钮会发生什么
+
+窗口右上角的关闭按钮 = **结束程序并释放内存**，不是隐藏窗口。
+
+WebView2 的渲染进程会一起退出，空闲时不在后台占内存。这是刻意的取舍：
+
+> 如果做成「最小化到托盘常驻」，进程必须一直活着，WebView 占的一两百 MB 内存
+> 就不会释放。既然目标是省内存，就干脆退干净，需要时再启动。
+
+重新打开后，模板、字段映射、上次用的模板与打印机都会自动恢复，不会丢。
+
+### 托盘菜单
+
+右键托盘图标可以打开菜单：
+
+| 菜单项 | 作用 |
+| --- | --- |
+| 打开 LabelDesk | 重新打开主窗口（等价于左键点击托盘图标） |
+| 退出 | 结束进程 |
+
+左键直接点托盘图标也会打开主窗口（不弹菜单，少一步）。
+
+> Windows 11 默认把新的托盘图标收进「显示隐藏的图标」折叠区（任务栏上的 `^`）。
+> 想让 LabelDesk 一直可见，把它从折叠区拖到任务栏上即可。
+
+### 开机启动（默认开启）
+
+程序**默认登记开机启动**，登录 Windows 后自动运行，不必去开始菜单找。
+
+开关在右上角的**「设置」**里：
+
+- 首次运行时自动开启一次；
+- 关掉之后不会再自动打开 —— 开关状态记在配置文件里，
+  不会下次启动又被默认值覆盖（否则就没法真正关掉它）。
+
+登记位置是当前用户的注册表启动项：
+
+```
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+  LabelDesk = <程序路径>
+```
+
+> 安装包是 perMachine 安装，程序在 `Program Files` 下。这里用 HKCU 而不是 HKLM，
+> 所以开机启动只对当前登录用户生效，也不需要管理员权限。
+> 个人自用场景下这样更合适；如果你需要所有用户都自启，告诉我改成 HKLM。
 
 ---
 
@@ -603,7 +656,8 @@ LabelDesk/
 │   └── index.html
 ├── src-tauri/                    # 后端（Rust）
 │   ├── src/
-│   │   ├── lib.rs                # 命令注册与应用状态
+│   │   ├── lib.rs                # 命令注册、系统托盘、开机启动、应用状态
+│   │   ├── autostart.rs          # 开机启动的默认值与开关
 │   │   ├── printers.rs           # 打印机枚举 + winspool RAW 打印
 │   │   ├── print.rs              # 打印流水线、位图打包、TSPL/ESC-POS/ZPL
 │   │   ├── store.rs              # 模板持久化（原子写、路径安全）
@@ -636,6 +690,7 @@ LabelDesk/
 | 资源 | 用途 | 许可 |
 | --- | --- | --- |
 | [Lucide](https://lucide.dev) | 界面图标 | ISC License, Copyright (c) Lucide Contributors |
+| [tauri-plugin-autostart](https://github.com/tauri-apps/plugins-workspace) | 开机自动启动 | Apache-2.0 OR MIT |
 | [jsQR](https://github.com/cozmo/jsQR) | 仅开发期：验证生成的二维码能被真实解码器识别 | Apache-2.0 |
 | [qrcode](https://github.com/soldair/node-qrcode) | 仅开发期：作为独立参考实现校验码字流与 RS 纠错 | MIT |
 | [@napi-rs/canvas](https://github.com/Brooooooklyn/canvas) | 仅开发期：在 Node 中跑真实渲染器做端到端预览 | MIT |

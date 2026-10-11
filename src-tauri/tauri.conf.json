@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "LabelDesk - 标签设计与打印",
         "width": 1440,
         "height": 920,
@@ -19,7 +20,8 @@
         "minHeight": 680,
         "resizable": true,
         "center": true,
-        "decorations": true
+        "decorations": true,
+        "visible": false
       }
     ],
     "security": {

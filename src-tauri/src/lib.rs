@@ -9,6 +9,7 @@
 
 // 这些模块同时被单元测试、示例程序（examples/print_test.rs）和 Tauri 命令使用，
 // 因此设为 pub 而不是私有模块。
+pub mod autostart;
 pub mod print;
 pub mod printers;
 pub mod store;
@@ -17,7 +18,17 @@ pub mod util;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+/// 主窗口标签
+const MAIN_WINDOW: &str = "main";
+/// 托盘图标 id，用于在事件里确认来源
+const TRAY_ID: &str = "labeldesk-tray";
+/// 从托盘重建窗口后通知前端：该重新同步配置与模板了
+const EVENT_TRAY_REOPEN: &str = "tray-reopen";
+
 
 /// 应用运行期状态。
 pub struct AppState {
@@ -228,6 +239,10 @@ fn diagnostics(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, S
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let layouts_dir = app
                 .path()
@@ -244,11 +259,61 @@ pub fn run() {
                     printer_script.display()
                 );
             }
+
+            // 开机启动：首次运行默认开启，之后尊重用户的选择
+            let handle = app.handle().clone();
+            let config = store::read_config(&layouts_dir);
+            let decided = config
+                .get(autostart::decided_key())
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let (enabled, decided_now) =
+                autostart::apply_default_if_first_run(&handle, decided, autostart::is_enabled(&handle));
+            if decided_now {
+                let mut next = config.clone();
+                if let Some(obj) = next.as_object_mut() {
+                    obj.insert(
+                        autostart::decided_key().to_string(),
+                        serde_json::Value::Bool(true),
+                    );
+                    obj.insert(
+                        "autostartEnabled".to_string(),
+                        serde_json::Value::Bool(enabled),
+                    );
+                }
+                if let Err(e) = store::write_config(&layouts_dir, &next) {
+                    eprintln!("[LabelDesk] 写入开机启动默认值失败：{e}");
+                }
+                eprintln!("[LabelDesk] 首次运行，已默认开启开机启动");
+            }
+
             app.manage(Mutex::new(AppState {
                 layouts_dir,
                 printer_script,
             }));
+
+            setup_tray(app)?;
+
+            // 配置里的窗口是隐藏声明的：这样托盘先就绪，再显示窗口，
+            // 不会出现「窗口已出现但点关闭没反应」的空窗期。
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                let _ = window.show();
+                let _ = window.set_focus();
+            } else {
+                eprintln!("[LabelDesk] 未找到主窗口 {MAIN_WINDOW}");
+            }
             Ok(())
+        })
+        // 关闭窗口 = 销毁 WebView 并结束进程，把内存还给系统。
+        // 托盘图标由系统托管，进程退出后依然在，随时可以重新拉起。
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label() == MAIN_WINDOW {
+                    let _ = window.destroy();
+                    window.app_handle().cleanup_before_exit();
+                    window.app_handle().exit(0);
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             list_printers,
@@ -263,8 +328,143 @@ pub fn run() {
             render_layout,
             read_config,
             write_config,
+            autostart_status,
+            set_autostart,
             diagnostics,
         ])
         .run(tauri::generate_context!())
         .expect("LabelDesk 启动失败");
+}
+
+// ---------------------------------------------------------------------------
+// 系统托盘
+// ---------------------------------------------------------------------------
+
+/// 建好托盘图标与菜单。
+///
+/// 设计意图：关闭窗口 = 销毁 WebView 并结束进程（把内存还给系统），
+/// 需要时点托盘图标重新拉起一个完整进程，而不是留一个隐藏窗口占内存。
+fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let open_item =
+        MenuItem::with_id(app, "open", "打开 LabelDesk", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
+        .menu(&menu)
+        // 左键直接开窗口，比「左键弹菜单」少一步
+        .show_menu_on_left_click(false)
+        .tooltip("LabelDesk —— 点击打开；关闭窗口后仍驻留在此")
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "open" => open_main_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                open_main_window(tray.app_handle());
+            }
+        });
+
+    // 用打包时嵌入的应用图标，不必额外准备托盘专用资源
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+
+    builder.build(app)?;
+    Ok(())
+}
+
+/// 打开主窗口。窗口已存在就显示并聚焦，不存在就重新创建。
+///
+/// 用户关闭窗口时我们销毁了窗口并结束了进程，所以正常情况下这里都是「重新创建」。
+fn open_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        return;
+    }
+
+    match tauri::WebviewWindowBuilder::new(app, MAIN_WINDOW, tauri::WebviewUrl::default())
+        .title("LabelDesk - 标签设计与打印")
+        .inner_size(1440.0, 920.0)
+        .min_inner_size(1080.0, 680.0)
+        .center()
+        .build()
+    {
+        Ok(window) => {
+            let _ = window.set_focus();
+            // 新窗口里的前端是全新实例，通知它重新读取配置与模板
+            let _ = app.emit(EVENT_TRAY_REOPEN, ());
+        }
+        Err(e) => eprintln!("[LabelDesk] 从托盘创建窗口失败：{e}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 开机启动
+// ---------------------------------------------------------------------------
+
+/// 开机启动当前状态。`decided` 表示用户是否已做过选择（未选过时前端显示默认开启）。
+#[derive(serde::Serialize)]
+pub struct AutostartStatus {
+    pub enabled: bool,
+    pub decided: bool,
+}
+
+#[tauri::command]
+fn autostart_status(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<AutostartStatus, String> {
+    let root = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .layouts_dir
+        .clone();
+    let decided = store::read_config(&root)
+        .get(autostart::decided_key())
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    Ok(AutostartStatus {
+        enabled: autostart::is_enabled(&app),
+        decided,
+    })
+}
+
+/// 开关开机启动，并把「用户已做选择」写进配置，避免下次启动又被默认值覆盖。
+#[tauri::command]
+fn set_autostart(
+    app: AppHandle,
+    state: State<'_, Mutex<AppState>>,
+    enabled: bool,
+) -> Result<AutostartStatus, String> {
+    let root = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .layouts_dir
+        .clone();
+
+    autostart::set_enabled(&app, enabled)?;
+
+    let mut config = store::read_config(&root);
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert(
+            autostart::decided_key().to_string(),
+            serde_json::Value::Bool(true),
+        );
+        obj.insert(
+            "autostartEnabled".to_string(),
+            serde_json::Value::Bool(enabled),
+        );
+    }
+    store::write_config(&root, &config)?;
+
+    Ok(AutostartStatus {
+        enabled: autostart::is_enabled(&app),
+        decided: true,
+    })
 }

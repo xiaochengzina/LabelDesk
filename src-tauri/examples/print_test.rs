@@ -259,6 +259,7 @@ fn main() {
         speed: Some(4),
         gap_mm: 2.0,
         gap_offset_mm: 0.0,
+        gap_mode: "gap".to_string(),
         invert_bits: false,
         paper_name: None,
     };

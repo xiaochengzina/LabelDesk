@@ -16,7 +16,9 @@ import { PropertiesPanel } from "./components/PropertiesPanel";
 import { PrintDialog } from "./components/PrintDialog";
 import { TemplateManager } from "./components/TemplateManager";
 import { VariablePanel } from "./components/VariablePanel";
+import { listen } from "@tauri-apps/api/event";
 import { FillPrintPanel } from "./components/FillPrintPanel";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { Icon, type IconName } from "./components/Icon";
 import { exportLayout, importLayout, listLayouts, readConfig, readLayout, saveLayout, writeConfig } from "./api/backend";
 import {
@@ -77,6 +79,7 @@ function rememberTemplate(id: string): void {
 
 export function App(): JSX.Element {
   const [mode, setMode] = useState<Mode>("print");
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div className="app">
@@ -98,6 +101,14 @@ export function App(): JSX.Element {
             设计模板
           </button>
         </div>
+        <button
+          className="ghost compact settings-button"
+          onClick={() => setShowSettings(true)}
+          title="设置：开机启动、关闭窗口后的行为"
+        >
+          <Icon name="settings-2" size={15} />
+          设置
+        </button>
         <div className="mode-bar-hint">
           {mode === "print"
             ? "在表格里选中一行 → Ctrl+C → 在下面 Ctrl+V → 打印"
@@ -110,6 +121,8 @@ export function App(): JSX.Element {
       ) : (
         <DesignWorkspace />
       )}
+
+      {showSettings ? <SettingsDialog onClose={() => setShowSettings(false)} /> : null}
     </div>
   );
 }
@@ -153,6 +166,23 @@ function DesignWorkspace(): JSX.Element {
    * 之前这里是一张空白的未命名模板，用户会误以为程序打开的就是在用的那张，
    * 改完才发现改的是另一张、而且没保存 —— 必须与打标签页保持一致。
    */
+  /**
+   * 从托盘重新打开时，前端可能是同一个实例（窗口被隐藏后恢复），
+   * 也可能是全新实例（进程被重建）。无论哪种，都重新同步一次配置与模板，
+   * 避免用到过期状态。
+   */
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("tray-reopen", () => {
+      setBootstrapped(false);
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(() => undefined);
+    return () => unlisten?.();
+  }, []);
+
   useEffect(() => {
     if (bootstrapped) return;
     let cancelled = false;
