@@ -17,6 +17,8 @@ import {
   type LayoutSummary,
 } from "../api/backend";
 import { loadDocument, markSaved, setStatus, useEditor } from "../state/store";
+import { writeConfig } from "../api/backend";
+import { Icon } from "./Icon";
 
 interface Props {
   onClose: () => void;
@@ -50,6 +52,8 @@ export function TemplateManager({ onClose }: Props): JSX.Element {
     try {
       const doc = await readLayout(id);
       loadDocument(doc, id);
+      // 记住这次选择，下次启动（含设计模式）直接打开它
+      writeConfig({ lastTemplateId: id }).catch(() => undefined);
       setStatus(`已打开模板「${doc.name}」`, "success");
       onClose();
     } catch (e) {
@@ -119,7 +123,7 @@ export function TemplateManager({ onClose }: Props): JSX.Element {
         <div className="modal-header">
           <h2>模板管理</h2>
           <button className="icon-button" onClick={onClose} title="关闭">
-            ✕
+            <Icon name="x" size={16} />
           </button>
         </div>
 

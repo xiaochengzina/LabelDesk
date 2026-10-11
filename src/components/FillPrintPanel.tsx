@@ -79,6 +79,14 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
         if (preferred) {
           const doc = await readLayout(preferred.id);
           setLayout(doc);
+          // 启动即落盘，保证下次启动（含设计模式）直接打开同一张模板。
+          // 只在没有记录时写，避免每次启动都无谓地写文件。
+          if (config.lastTemplateId !== preferred.id) {
+            writeConfig({
+              lastTemplateId: preferred.id,
+              lastPrinterName: chosen?.name ?? "",
+            }).catch(() => undefined);
+          }
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));

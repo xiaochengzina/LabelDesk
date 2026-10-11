@@ -136,15 +136,19 @@ body {
 }
 
 .align-button {
-  font-size: 14px;
-  line-height: 1;
   padding: 4px 6px;
-  min-width: 26px;
+  min-width: 28px;
 }
 
 /* ---------------------------------------------------------------- 按钮 */
 
+/* 图标与文字并排时的对齐。inline-flex 让图标不依赖基线，
+   避免不同字体下图标上下跳动。 */
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   font-family: inherit;
   font-size: 13px;
   padding: 5px 11px;
@@ -298,6 +302,13 @@ button.compact {
 
 /* -------------------------------------------------------------- 元素库 */
 
+/* 图标：颜色继承 currentColor，因此自动适配正常/悬停/禁用状态 */
+.icon {
+  flex: 0 0 auto;
+  display: block;
+  pointer-events: none;
+}
+
 .element-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -308,25 +319,25 @@ button.compact {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   padding: 11px 4px;
   border-radius: var(--radius);
   background: var(--panel-2);
+  color: var(--accent);
+}
+
+.element-card .icon {
+  color: var(--accent);
 }
 
 .element-card:hover {
   background: var(--accent-soft);
 }
 
-.element-icon {
-  font-size: 17px;
-  font-family: var(--mono);
-  color: var(--accent);
-  line-height: 1;
-}
 
 .element-label {
   font-size: 12px;
+  color: var(--text);
 }
 
 /* -------------------------------------------------------------- 图层 */
@@ -364,9 +375,19 @@ button.compact {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.layer-item.hidden .layer-name {
+.layer-item.hidden .layer-kind-icon {
+  color: var(--text-dim);
+  margin-right: 1px;
+}
+
+.layer-name {
   color: var(--text-dim);
   text-decoration: line-through;
+}
+
+.layer-kind-icon {
+  color: var(--text-dim);
+  margin-right: 1px;
 }
 
 .layer-name {
@@ -388,6 +409,10 @@ button.compact {
 .layer-actions {
   display: flex;
   gap: 1px;
+}
+
+.layer-item .icon-button {
+  padding: 2px 3px;
 }
 
 /* ---------------------------------------------------------- 画布区域 */

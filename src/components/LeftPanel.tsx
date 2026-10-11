@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from "react";
 import type { JSX } from "react";
-import { listElementDefinitions } from "../renderer/elements";
+import { elementTypeIcon, listElementDefinitions } from "../renderer/elements";
 import { MEDIA_PRESETS, type ElementType, type LabelElement } from "../model/types";
 import {
   addElement,
@@ -22,6 +22,7 @@ import {
 } from "../state/store";
 import { fmt } from "../model/units";
 import { FieldMappingEditor } from "./FieldMappingEditor";
+import { Icon } from "./Icon";
 
 type Tab = "elements" | "layers" | "page";
 
@@ -82,7 +83,7 @@ function ElementPalette(): JSX.Element {
       <div className="element-grid">
         {definitions.map((def) => (
           <button key={def.type} className="element-card" onClick={() => add(def.type)} title={def.description}>
-            <span className="element-icon">{def.icon}</span>
+            <Icon name={def.icon} size={20} />
             <span className="element-label">{def.label}</span>
           </button>
         ))}
@@ -114,6 +115,7 @@ function LayerList(): JSX.Element {
   return (
     <>
       <div className="section-title">
+        <Icon name="list" size={13} />
         图层（{items.length}）
         <span className="hint-inline">列表上方 = 画布更上层</span>
       </div>
@@ -139,7 +141,7 @@ function LayerList(): JSX.Element {
                   updateElements([element.id], { visible: !element.visible });
                 }}
               >
-                {element.visible ? "◉" : "○"}
+                <Icon name={element.visible ? "eye" : "eye-off"} size={14} />
               </button>
               <button
                 className="icon-button"
@@ -149,8 +151,9 @@ function LayerList(): JSX.Element {
                   updateElements([element.id], { locked: !element.locked });
                 }}
               >
-                {element.locked ? "🔒" : "🔓"}
+                <Icon name={element.locked ? "lock" : "lock-open"} size={14} />
               </button>
+              <Icon name={elementTypeIcon(element.kind)} size={13} className="layer-kind-icon" />
               <span className="layer-name">{element.name}</span>
               <span className="layer-type">{typeLabel(element.kind)}</span>
               <span className="layer-actions">
@@ -162,7 +165,7 @@ function LayerList(): JSX.Element {
                     setElementOrder(element.id, "forward");
                   }}
                 >
-                  ↑
+                  <Icon name="chevron-up" size={14} />
                 </button>
                 <button
                   className="icon-button"
@@ -172,7 +175,7 @@ function LayerList(): JSX.Element {
                     setElementOrder(element.id, "backward");
                   }}
                 >
-                  ↓
+                  <Icon name="chevron-down" size={14} />
                 </button>
                 <button
                   className="icon-button"
@@ -182,7 +185,7 @@ function LayerList(): JSX.Element {
                     removeElements([element.id]);
                   }}
                 >
-                  ✕
+                  <Icon name="x" size={14} />
                 </button>
               </span>
             </li>
@@ -191,9 +194,11 @@ function LayerList(): JSX.Element {
       </ul>
       <div className="button-row">
         <button onClick={() => duplicateElements(selectedIds)} disabled={selectedIds.length === 0}>
+          <Icon name="copy" size={14} />
           复制选中
         </button>
         <button onClick={() => removeElements(selectedIds)} disabled={selectedIds.length === 0}>
+          <Icon name="trash" size={14} />
           删除选中
         </button>
         <button className="ghost" onClick={() => clearSelection()}>

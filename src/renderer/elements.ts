@@ -11,6 +11,7 @@
  */
 
 import type { LabelElement, ElementType } from "../model/types";
+import type { IconName } from "../components/icons";
 import { newElementId } from "../model/types";
 import { encodeBarcode, encodeQr, quietZoneUnits, type BarcodeKind } from "../model/barcode";
 import { getImageSync, loadImage } from "./images";
@@ -97,8 +98,8 @@ export interface ElementDefinition<T extends LabelElement = LabelElement> {
   type: ElementType;
   /** 显示名 */
   label: string;
-  /** 图标（内联 SVG path 或简单字符） */
-  icon: string;
+  /** Lucide 图标名（见 src/components/icons.ts，由 scripts/make-icons.mjs 生成） */
+  icon: IconName;
   /** 一句话说明 */
   description: string;
   /** 新建时的默认属性 */
@@ -227,7 +228,7 @@ function wrapLines(
 const textDef: ElementDefinition = {
   type: "text",
   label: "文本",
-  icon: "T",
+  icon: "type",
   description: "单行或多行文字，支持中文、自动换行与自动缩小",
   create: (partial = {}) => ({
     ...baseElement("text", "文本"),
@@ -385,7 +386,7 @@ const BARCODE_FORMATS = [
 const barcodeDef: ElementDefinition = {
   type: "barcode",
   label: "一维码",
-  icon: "|||",
+  icon: "barcode",
   description: "Code128 / Code39 / EAN / UPC / ITF，含校验位自动补全与静区",
   create: (partial = {}) => ({
     ...baseElement("barcode", "一维码"),
@@ -497,7 +498,7 @@ function stripCheckDigit(text: string, format: BarcodeKind): string {
 const qrDef: ElementDefinition = {
   type: "qrcode",
   label: "二维码",
-  icon: "▣",
+  icon: "qr-code",
   description: "QR Code（字节模式，UTF-8），适合网址、序列号、中文",
   create: (partial = {}) => ({
     ...baseElement("qrcode", "二维码"),
@@ -566,7 +567,7 @@ const qrDef: ElementDefinition = {
 const imageDef: ElementDefinition = {
   type: "image",
   label: "图片",
-  icon: "▤",
+  icon: "image",
   description: "Logo / 图形，支持二值化以适配热敏打印",
   create: (partial = {}) => ({
     ...baseElement("image", "图片"),
@@ -698,7 +699,7 @@ function applyThreshold(
 const shapeDef: ElementDefinition = {
   type: "shape",
   label: "形状",
-  icon: "□",
+  icon: "shapes",
   description: "边框、分割线、圆角框与椭圆",
   create: (partial = {}) => ({
     ...baseElement("shape", "形状"),
@@ -795,3 +796,22 @@ registerElement(barcodeDef);
 registerElement(qrDef);
 registerElement(imageDef);
 registerElement(shapeDef);
+
+/** 形状子类型对应的图标（属性面板与图层列表用） */
+export function shapeKindIcon(shape: string): IconName {
+  switch (shape) {
+    case "roundRect":
+      return "square-round-corner";
+    case "line":
+      return "minus";
+    case "ellipse":
+      return "circle";
+    default:
+      return "square";
+  }
+}
+
+/** 该元素类型在界面上使用的图标 */
+export function elementTypeIcon(type: ElementType): IconName {
+  return getElementDefinition(type).icon;
+}

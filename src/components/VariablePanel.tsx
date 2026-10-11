@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import type { JSX } from "react";
 import { setVariables, useEditor } from "../state/store";
 import { extractVariableNames, isValidVariableName } from "../renderer/elements";
+import { Icon } from "./Icon";
 import type { LabelElement } from "../model/types";
 
 /** 从模板中扫描出所有 {{变量名}}（含中文名） */
@@ -61,7 +62,7 @@ export function VariablePanel({ onClose }: Props): JSX.Element {
       <div className="variable-header">
         <span>变量</span>
         <button className="icon-button" onClick={onClose} title="收起">
-          ✕
+          <Icon name="x" size={14} />
         </button>
       </div>
 
@@ -81,7 +82,7 @@ export function VariablePanel({ onClose }: Props): JSX.Element {
                 onChange={(e) => update(name, e.target.value)}
               />
               <button className="icon-button" title="移除该变量默认值" onClick={() => remove(name)}>
-                ✕
+                <Icon name="x" size={14} />
               </button>
             </div>
           ))

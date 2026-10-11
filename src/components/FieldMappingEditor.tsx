@@ -13,6 +13,7 @@ import type { TemplateField } from "../model/types";
 import { buildFill, inferFields } from "../model/fill";
 import { extractVariableNames } from "../renderer/elements";
 import { setTemplateFields, useEditor } from "../state/store";
+import { Icon } from "./Icon";
 
 export function FieldMappingEditor(): JSX.Element {
   const doc = useEditor((s) => s.doc);
@@ -131,13 +132,13 @@ export function FieldMappingEditor(): JSX.Element {
                 </td>
                 <td className="col-actions">
                   <button className="icon-button" title="上移" onClick={() => move(index, -1)}>
-                    ↑
+                    <Icon name="chevron-up" size={14} />
                   </button>
                   <button className="icon-button" title="下移" onClick={() => move(index, 1)}>
-                    ↓
+                    <Icon name="chevron-down" size={14} />
                   </button>
                   <button className="icon-button" title="删除" onClick={() => remove(index)}>
-                    ✕
+                    <Icon name="trash" size={14} />
                   </button>
                 </td>
               </tr>

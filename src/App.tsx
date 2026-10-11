@@ -17,7 +17,8 @@ import { PrintDialog } from "./components/PrintDialog";
 import { TemplateManager } from "./components/TemplateManager";
 import { VariablePanel } from "./components/VariablePanel";
 import { FillPrintPanel } from "./components/FillPrintPanel";
-import { exportLayout, importLayout, readLayout, saveLayout } from "./api/backend";
+import { Icon, type IconName } from "./components/Icon";
+import { exportLayout, importLayout, listLayouts, readConfig, readLayout, saveLayout, writeConfig } from "./api/backend";
 import {
   alignElements,
   clearStatus,
@@ -34,6 +35,44 @@ import { createLayout, type LabelLayout } from "./model/types";
 import { renderToDataUrl } from "./renderer/renderer";
 
 type Mode = "print" | "design";
+
+/**
+ * 载入模板作为当前编辑对象。
+ *
+ * 设计模式与打标签页必须指向同一套状态：如果设计模式启动时是一张空白默认模板，
+ * 用户会以为「打开程序看到的就是我在用的模板」，结果改了另一张，改动还丢失。
+ */
+async function loadTemplateIntoEditor(id: string): Promise<LabelLayout | null> {
+  try {
+    const doc = await readLayout(id);
+    loadDocument(doc, id);
+    return doc;
+  } catch {
+    return null;
+  }
+}
+
+/** 决定启动时该用哪个模板：优先上次使用的，其次第一个可用的 */
+async function resolveStartupTemplate(): Promise<string | null> {
+  try {
+    const [list, config] = await Promise.all([
+      listLayouts(),
+      readConfig().catch(() => ({}) as { lastTemplateId?: string }),
+    ]);
+    if (list.length === 0) return null;
+    const remembered = config.lastTemplateId;
+    if (remembered && list.some((t) => t.id === remembered)) return remembered;
+    return list[0].id;
+  } catch {
+    return null;
+  }
+}
+
+/** 记住当前模板，供下次启动与设计模式复用 */
+function rememberTemplate(id: string): void {
+  if (!id) return;
+  writeConfig({ lastTemplateId: id }).catch(() => undefined);
+}
 
 export function App(): JSX.Element {
   const [mode, setMode] = useState<Mode>("print");
@@ -104,6 +143,29 @@ function DesignWorkspace(): JSX.Element {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showVariables, setShowVariables] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
+
+  /**
+   * 首次进入设计模式时载入「实际在用的模板」。
+   *
+   * 之前这里是一张空白的未命名模板，用户会误以为程序打开的就是在用的那张，
+   * 改完才发现改的是另一张、而且没保存 —— 必须与打标签页保持一致。
+   */
+  useEffect(() => {
+    if (bootstrapped) return;
+    let cancelled = false;
+    (async () => {
+      const id = await resolveStartupTemplate();
+      if (cancelled) return;
+      if (id) {
+        await loadTemplateIntoEditor(id);
+      }
+      setBootstrapped(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapped]);
 
   // 状态提示自动消失
   useEffect(() => {
@@ -151,6 +213,7 @@ function DesignWorkspace(): JSX.Element {
     try {
       await saveLayout(name, layout);
       markSaved(name);
+      rememberTemplate(name);
       setStatus(`已保存模板「${name}」`, "success");
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e), "error");
@@ -169,6 +232,7 @@ function DesignWorkspace(): JSX.Element {
       await saveLayout(name, next);
       loadDocument(next, name);
       markSaved(name);
+      rememberTemplate(name);
       setStatus(`已另存为「${name}」`, "success");
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e), "error");
@@ -245,15 +309,19 @@ function DesignWorkspace(): JSX.Element {
       <header className="toolbar">
         <div className="toolbar-group">
           <button onClick={newTemplate} title="新建模板">
+            <Icon name="file-plus" size={15} />
             新建
           </button>
           <button onClick={() => setShowTemplates(true)} title="打开已保存的模板">
+            <Icon name="folder-open" size={15} />
             打开
           </button>
           <button onClick={save} disabled={busy} title="保存到应用数据目录 (Ctrl+S)">
+            <Icon name="save" size={15} />
             保存{dirty ? " *" : ""}
           </button>
           <button onClick={saveAs} disabled={busy} title="另存为新模板">
+            <Icon name="copy" size={15} />
             另存为
           </button>
         </div>
@@ -262,10 +330,10 @@ function DesignWorkspace(): JSX.Element {
 
         <div className="toolbar-group">
           <button onClick={undo} disabled={!canUndo} title="撤销 (Ctrl+Z)">
-            ↶
+            <Icon name="undo-2" size={15} />
           </button>
           <button onClick={redo} disabled={!canRedo} title="重做 (Ctrl+Shift+Z)">
-            ↷
+            <Icon name="redo-2" size={15} />
           </button>
         </div>
 
@@ -274,16 +342,16 @@ function DesignWorkspace(): JSX.Element {
         <div className="toolbar-group" title={alignHint}>
           {(
             [
-              ["left", "左对齐", "⇤"],
-              ["hcenter", "水平居中", "⇔"],
-              ["right", "右对齐", "⇥"],
-              ["top", "顶对齐", "⤒"],
-              ["vcenter", "垂直居中", "⇕"],
-              ["bottom", "底对齐", "⤓"],
-              ["hdistribute", "水平等距", "⇹"],
-              ["vdistribute", "垂直等距", "⇳"],
+              ["left", "左对齐", "align-horizontal-justify-start"],
+              ["hcenter", "水平居中", "align-horizontal-justify-center"],
+              ["right", "右对齐", "align-horizontal-justify-end"],
+              ["top", "顶对齐", "align-vertical-justify-start"],
+              ["vcenter", "垂直居中", "align-vertical-justify-center"],
+              ["bottom", "底对齐", "align-vertical-justify-end"],
+              ["hdistribute", "水平等距", "align-horizontal-space-between"],
+              ["vdistribute", "垂直等距", "align-vertical-space-between"],
             ] as const
-          ).map(([alignMode, label, glyph]) => (
+          ).map(([alignMode, label, iconName]) => (
             <button
               key={alignMode}
               className="ghost compact align-button"
@@ -292,7 +360,7 @@ function DesignWorkspace(): JSX.Element {
               title={label}
               aria-label={label}
             >
-              {glyph}
+              <Icon name={iconName as IconName} size={15} />
             </button>
           ))}
         </div>
@@ -301,11 +369,11 @@ function DesignWorkspace(): JSX.Element {
 
         <div className="toolbar-group">
           <button className="ghost compact" onClick={() => setZoom(zoom / 1.25)} title="缩小">
-            −
+            <Icon name="zoom-out" size={15} />
           </button>
           <span className="zoom-label">{Math.round(zoom * 100)}%</span>
           <button className="ghost compact" onClick={() => setZoom(zoom * 1.25)} title="放大">
-            +
+            <Icon name="zoom-in" size={15} />
           </button>
           <button className="ghost compact" onClick={() => setZoom(1)} title="恢复 100%">
             1:1
@@ -316,21 +384,26 @@ function DesignWorkspace(): JSX.Element {
 
         <div className="toolbar-group">
           <button className="ghost" onClick={() => setShowVariables((v) => !v)}>
+            <Icon name="variable" size={15} />
             变量
           </button>
           <button className="ghost" onClick={exportPng} title="导出黑白 PNG">
+            <Icon name="download" size={15} />
             导出 PNG
           </button>
           <button className="ghost" onClick={exportTemplate} title="导出模板 JSON">
+            <Icon name="file-up" size={15} />
             导出模板
           </button>
           <button className="ghost" onClick={importTemplate}>
+            <Icon name="upload" size={15} />
             导入模板
           </button>
         </div>
 
         <div className="toolbar-group">
           <button className="primary" onClick={() => setShowPrint(true)}>
+            <Icon name="printer" size={15} />
             打印测试…
           </button>
         </div>

@@ -29,6 +29,7 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.142",
     "@napi-rs/canvas": "^1.0.10",
     "@tauri-apps/cli": "^2.12.1",
     "@types/react": "^19.2.2",

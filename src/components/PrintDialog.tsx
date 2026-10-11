@@ -20,6 +20,7 @@ import {
 import { renderToDataUrl } from "../renderer/renderer";
 import { mmToPx } from "../model/units";
 import { setLayoutMeta, setStatus, useEditor } from "../state/store";
+import { Icon } from "./Icon";
 
 interface Props {
   onClose: () => void;
@@ -163,7 +164,7 @@ export function PrintDialog({ onClose }: Props): JSX.Element {
         <div className="modal-header">
           <h2>打印标签</h2>
           <button className="icon-button" onClick={onClose} title="关闭">
-            ✕
+            <Icon name="x" size={16} />
           </button>
         </div>
 

@@ -44,6 +44,7 @@
 - [开发与测试](#开发与测试)
 - [已知限制](#已知限制)
 - [目录结构](#目录结构)
+- [第三方资源](#第三方资源)
 - [许可与免责](#许可与免责)
 
 ---
@@ -518,6 +519,8 @@ cargo run --example print_image -- <png> <wPx> <hPx> <wMm> <hMm> [打印机]  # 
 | `npm run verify:dpi` | 同一模板在 203/300/600 dpi 下物理尺寸一致性 |
 | `npm run verify:render` | 端到端：真实渲染器生成标签 PNG（加 `--print` 可真机打印） |
 | `node scripts/selfcheck-qr.mjs` | 按规范读回 QR 数据位流，不依赖第三方实现 |
+| `node scripts/make-icons.mjs` | 从 Lucide 生成 `src/components/icons.ts`（仅在增删图标时需要跑） |
+| `node scripts/make-test-rows.mjs` | 生成 `testdata/` 下的实机测试数据 |
 
 端到端验证会输出 `docs/e2e-label.png` 预览；加 `--print` 后走完整链路真机出纸：
 
@@ -592,6 +595,9 @@ LabelDesk/
 │   │   ├── PrintDialog.tsx       # 打印参数对话框（设计模式下的测试打印）
 │   │   ├── TemplateManager.tsx   # 模板导入导出与删除
 │   │   └── VariablePanel.tsx     # 变量默认值编辑
+│   ├── components/
+│   │   ├── Icon.tsx              # 图标组件（内联 SVG，颜色继承 currentColor）
+│   │   └── icons.ts              # 图标数据，由 scripts/make-icons.mjs 自动生成
 │   ├── api/backend.ts            # Tauri 命令绑定
 │   ├── App.tsx / main.tsx / styles.css
 │   └── index.html
@@ -622,6 +628,21 @@ LabelDesk/
 │   └── loader.mjs / loader-register.mjs  # Node ESM 解析钩子
 └── docs/                         # 截图与端到端预览
 ```
+
+---
+
+## 第三方资源
+
+| 资源 | 用途 | 许可 |
+| --- | --- | --- |
+| [Lucide](https://lucide.dev) | 界面图标 | ISC License, Copyright (c) Lucide Contributors |
+| [jsQR](https://github.com/cozmo/jsQR) | 仅开发期：验证生成的二维码能被真实解码器识别 | Apache-2.0 |
+| [qrcode](https://github.com/soldair/node-qrcode) | 仅开发期：作为独立参考实现校验码字流与 RS 纠错 | MIT |
+| [@napi-rs/canvas](https://github.com/Brooooooklyn/canvas) | 仅开发期：在 Node 中跑真实渲染器做端到端预览 | MIT |
+
+图标通过 scripts/make-icons.mjs 在构建期从 @iconify-json/lucide 提取，
+只生成实际用到的 45 个图标，**运行时不引入任何图标库，也不联网**。
+生成的 src/components/icons.ts 已提交，因此正常构建不依赖该脚本。
 
 ---
 
