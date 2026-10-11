@@ -86,15 +86,35 @@ export function FieldMappingEditor(): JSX.Element {
         <div className="mapping-list">
           {fields.map((field, index) => (
             <div key={index} className={field.skip ? "mapping-row skipped" : "mapping-row"}>
-              <div className="mapping-row-main">
-                <span className="mapping-index">{index + 1}</span>
-                <input
-                  type="text"
-                  className="mapping-label"
-                  value={field.label}
-                  placeholder="列名，如：笔记本型号"
-                  onChange={(e) => update(index, { label: e.target.value })}
-                />
+              <span className="mapping-index">{index + 1}</span>
+              <input
+                type="text"
+                className="mapping-label"
+                value={field.label}
+                placeholder="列名，如：笔记本型号"
+                onChange={(e) => update(index, { label: e.target.value })}
+              />
+              <select
+                className="mapping-variable"
+                value={field.variable}
+                disabled={Boolean(field.skip)}
+                onChange={(e) => update(index, { variable: e.target.value })}
+              >
+                <option value="">（未选择变量）</option>
+                {availableVariables.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+                {field.variable && !availableVariables.includes(field.variable) ? (
+                  <option value={field.variable}>{field.variable}（模板中未使用）</option>
+                ) : null}
+              </select>
+              <label className="mapping-skip" title="勾选后这一列只占位置、不填入变量">
+                <input type="checkbox" checked={Boolean(field.skip)} onChange={() => toggleSkip(index)} />
+                忽略
+              </label>
+              <div className="mapping-actions">
                 <button className="icon-button" title="上移" onClick={() => move(index, -1)}>
                   <Icon name="chevron-up" size={14} />
                 </button>
@@ -104,34 +124,6 @@ export function FieldMappingEditor(): JSX.Element {
                 <button className="icon-button" title="删除这一列" onClick={() => remove(index)}>
                   <Icon name="trash" size={14} />
                 </button>
-              </div>
-              <div className="mapping-row-sub">
-                <label className="check-row skip-toggle" title="勾选后这一列只占位置、不填入变量">
-                  <input type="checkbox" checked={Boolean(field.skip)} onChange={() => toggleSkip(index)} />
-                  忽略
-                </label>
-                {field.skip ? (
-                  <span className="hint-inline">这一列会跳过，不填入任何变量</span>
-                ) : (
-                  <>
-                    <span className="arrow">→</span>
-                    <select
-                      className="mapping-variable"
-                      value={field.variable}
-                      onChange={(e) => update(index, { variable: e.target.value })}
-                    >
-                      <option value="">（未选择变量）</option>
-                      {availableVariables.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                      {field.variable && !availableVariables.includes(field.variable) ? (
-                        <option value={field.variable}>{field.variable}（模板中未使用）</option>
-                      ) : null}
-                    </select>
-                  </>
-                )}
               </div>
             </div>
           ))}
