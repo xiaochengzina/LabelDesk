@@ -304,14 +304,16 @@ pub fn run() {
             }
             Ok(())
         })
-        // 关闭窗口 = 销毁 WebView 并结束进程，把内存还给系统。
-        // 托盘图标由系统托管，进程退出后依然在，随时可以重新拉起。
+        // 关闭窗口：销毁 WebView（把它的内存还给系统），但**保留托盘**。
+        //
+        // 为什么不在窗口事件里 prevent_close()：那是「别关窗口」的意思，
+        // 与「关掉窗口但留住托盘」是两回事。正确做法是让窗口正常关闭，
+        // 然后在 RunEvent::ExitRequested 里拒绝「最后一个窗口没了就退出进程」。
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if window.label() == MAIN_WINDOW {
+                    // 销毁窗口 → WebView2 渲染进程随之退出
                     let _ = window.destroy();
-                    window.app_handle().cleanup_before_exit();
-                    window.app_handle().exit(0);
                 }
             }
         })
@@ -332,18 +334,33 @@ pub fn run() {
             set_autostart,
             diagnostics,
         ])
-        .run(tauri::generate_context!())
-        .expect("LabelDesk 启动失败");
+        .build(tauri::generate_context!())
+        .expect("LabelDesk 启动失败")
+        .run(|_app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                // 「最后一个窗口关闭」会请求退出进程；托盘还在时拒绝它。
+                // 托盘「退出」已把标志置位，那种情况放行。
+                if !QUIT_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
 
 // ---------------------------------------------------------------------------
 // 系统托盘
 // ---------------------------------------------------------------------------
 
+/// 用户是否从托盘明确选择了「退出」。
+///
+/// 关闭窗口只是销毁 WebView、留住托盘；只有走托盘「退出」才真的结束进程。
+/// 用原子标志把这两个意图区分开，否则 ExitRequested 一律被拦下，就退不掉了。
+static QUIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// 建好托盘图标与菜单。
 ///
-/// 设计意图：关闭窗口 = 销毁 WebView 并结束进程（把内存还给系统），
-/// 需要时点托盘图标重新拉起一个完整进程，而不是留一个隐藏窗口占内存。
+/// 设计意图：关闭窗口 = 销毁 WebView 把内存还给系统，但进程与托盘图标留着，
+/// 随时点一下就能重新打开 —— 而不是把整个程序退掉让用户找不到入口。
 fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let open_item =
         MenuItem::with_id(app, "open", "打开 LabelDesk", true, None::<&str>)?;
@@ -357,7 +374,10 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("LabelDesk —— 点击打开；关闭窗口后仍驻留在此")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => open_main_window(app),
-            "quit" => app.exit(0),
+            "quit" => {
+                QUIT_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -391,7 +411,14 @@ fn open_main_window(app: &AppHandle) {
         return;
     }
 
-    match tauri::WebviewWindowBuilder::new(app, MAIN_WINDOW, tauri::WebviewUrl::default())
+    match tauri::WebviewWindowBuilder::new(
+        app,
+        MAIN_WINDOW,
+        // 必须显式指定 App("index.html")：WebviewUrl::default() 在开发模式下会解析成
+        // devUrl（http://127.0.0.1:5183），重建出的窗口会去连开发服务器而显示
+        //「127.0.0.1 拒绝连接」。App 走 tauri://localhost，打包后即内嵌的前端资源。
+        tauri::WebviewUrl::App("index.html".into()),
+    )
         .title("LabelDesk - 标签设计与打印")
         .inner_size(1440.0, 920.0)
         .min_inner_size(1080.0, 680.0)
