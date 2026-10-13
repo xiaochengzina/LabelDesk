@@ -10,6 +10,7 @@
 // 这些模块同时被单元测试、示例程序（examples/print_test.rs）和 Tauri 命令使用，
 // 因此设为 pub 而不是私有模块。
 pub mod autostart;
+pub mod datadir;
 pub mod print;
 pub mod printers;
 pub mod store;
@@ -26,16 +27,24 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const MAIN_WINDOW: &str = "main";
 /// 托盘图标 id，用于在事件里确认来源
 const TRAY_ID: &str = "labeldesk-tray";
+/// 小窗（速打窗）标签
+const QUICK_WINDOW: &str = "quick";
 /// 从托盘重建窗口后通知前端：该重新同步配置与模板了
 const EVENT_TRAY_REOPEN: &str = "tray-reopen";
+/// 小窗与完整窗口互切后通知前端刷新
+const EVENT_MODE_SWITCHED: &str = "mode-switched";
 
 
 /// 应用运行期状态。
 pub struct AppState {
-    /// 模板目录（`%APPDATA%\com.labeldesk.app\layouts`）
+    /// 数据目录（安装目录下的 `data\`）
+    data_dir: PathBuf,
+    /// 模板目录（`data\layouts`）
     layouts_dir: PathBuf,
     /// 驱动打印辅助脚本路径
     printer_script: PathBuf,
+    /// 是否用的小窗形态（托盘/再次启动时据此还原）
+    quick_mode: bool,
 }
 
 impl AppState {
@@ -244,11 +253,15 @@ pub fn run() {
             None,
         ))
         .setup(|app| {
-            let layouts_dir = app
-                .path()
-                .app_data_dir()
-                .map(|d| d.join("layouts"))
-                .unwrap_or_else(|_| PathBuf::from("layouts"));
+            // 数据统一放在安装目录下的 data\（详见 datadir 模块）。
+            // 先建目录，再把老版本留在 %APPDATA% 的数据搬过来。
+            let data_dir = datadir::ensure()?;
+            match datadir::migrate_legacy_if_needed(&data_dir) {
+                Ok(0) => {}
+                Ok(n) => eprintln!("[LabelDesk] 已迁移 {n} 个数据文件到 {}", data_dir.display()),
+                Err(e) => eprintln!("[LabelDesk] 迁移旧数据失败（不影响启动）: {e}"),
+            }
+            let layouts_dir = data_dir.join("layouts");
             if let Err(e) = std::fs::create_dir_all(&layouts_dir) {
                 eprintln!("[LabelDesk] 无法创建模板目录 {}: {e}", layouts_dir.display());
             }
@@ -288,8 +301,10 @@ pub fn run() {
             }
 
             app.manage(Mutex::new(AppState {
+                data_dir,
                 layouts_dir,
                 printer_script,
+                quick_mode: false,
             }));
 
             setup_tray(app)?;
@@ -332,6 +347,12 @@ pub fn run() {
             write_config,
             autostart_status,
             set_autostart,
+            data_dir_info,
+            open_data_dir,
+            backup_data_dir,
+            enter_quick_mode,
+            exit_quick_mode,
+            close_quick_mode,
             diagnostics,
         ])
         .build(tauri::generate_context!())
@@ -347,6 +368,93 @@ pub fn run() {
         });
 }
 
+// ---------------------------------------------------------------------------
+// 小窗模式
+// ---------------------------------------------------------------------------
+
+/// 速打小窗的逻辑尺寸。窄而矮，顶置在表格旁边不挡视线。
+const QUICK_W: f64 = 470.0;
+const QUICK_H: f64 = 210.0;
+
+/// 建好小窗（隐藏）。首次切到小窗时创建，之后复用。
+fn ensure_quick_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    if let Some(win) = app.get_webview_window(QUICK_WINDOW) {
+        return Ok(win);
+    }
+    tauri::WebviewWindowBuilder::new(
+        app,
+        QUICK_WINDOW,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("LabelDesk 速打")
+    .inner_size(QUICK_W, QUICK_H)
+    .min_inner_size(380.0, 170.0)
+    .resizable(true)
+    // 顶置：粘贴时不用来回切窗口
+    .always_on_top(true)
+    // 无边框标题栏：只留我们自己画的那一条，省高度
+    .decorations(false)
+    .skip_taskbar(true)
+    .visible(false)
+    .build()
+    .map_err(|e| format!("创建小窗失败: {e}"))
+}
+
+/// 切到小窗形态：隐藏完整窗口，显示顶置小窗。
+#[tauri::command]
+fn enter_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    let win = ensure_quick_window(&app)?;
+    if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = main.hide();
+    }
+    win.show().map_err(|e| e.to_string())?;
+    let _ = win.set_focus();
+    if let Ok(mut s) = state.lock() {
+        s.quick_mode = true;
+    }
+    Ok(())
+}
+
+/// 从托盘/快捷键切回小窗
+fn show_quick_window(app: &AppHandle) {
+    match ensure_quick_window(app) {
+        Ok(win) => {
+            let _ = win.show();
+            let _ = win.set_focus();
+            if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
+                let _ = main.hide();
+            }
+            let _ = app.emit(EVENT_MODE_SWITCHED, "quick");
+        }
+        Err(e) => eprintln!("[LabelDesk] {e}"),
+    }
+}
+
+/// 切回完整窗口：隐藏小窗，显示并聚焦完整窗口。
+#[tauri::command]
+fn exit_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    if let Some(quick) = app.get_webview_window(QUICK_WINDOW) {
+        let _ = quick.hide();
+    }
+    if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
+        main.show().map_err(|e| e.to_string())?;
+        let _ = main.unminimize();
+        let _ = main.set_focus();
+    } else {
+        open_main_window(&app);
+    }
+    if let Ok(mut s) = state.lock() {
+        s.quick_mode = false;
+    }
+    let _ = app.emit(EVENT_MODE_SWITCHED, "full");
+    Ok(())
+}
+
+/// 关闭小窗：直接切回完整窗口，而不是退出程序
+#[tauri::command]
+fn close_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    exit_quick_mode(app, state)
+}
 // ---------------------------------------------------------------------------
 // 系统托盘
 // ---------------------------------------------------------------------------
@@ -400,10 +508,23 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// 当前是否处于小窗形态（托盘据此还原）
+fn in_quick_mode(app: &AppHandle) -> bool {
+    app.state::<Mutex<AppState>>()
+        .lock()
+        .map(|s| s.quick_mode)
+        .unwrap_or(false)
+}
+
 /// 打开主窗口。窗口已存在就显示并聚焦，不存在就重新创建。
 ///
 /// 用户关闭窗口时我们销毁了窗口并结束了进程，所以正常情况下这里都是「重新创建」。
 fn open_main_window(app: &AppHandle) {
+    // 之前用的是小窗形态，就从托盘恢复小窗，别突然弹出大窗口
+    if in_quick_mode(app) {
+        show_quick_window(app);
+        return;
+    }
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.show();
         let _ = window.unminimize();
@@ -434,6 +555,71 @@ fn open_main_window(app: &AppHandle) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 数据目录
+// ---------------------------------------------------------------------------
+
+/// 数据目录信息，供设置页显示与「打开目录 / 备份」使用。
+#[derive(serde::Serialize)]
+pub struct DataDirInfo {
+    /// 数据根目录绝对路径
+    pub dir: String,
+    /// 模板数量
+    pub layout_count: usize,
+    /// 旧位置（%APPDATA%\com.labeldesk.app）是否还在（提示用户可清理）
+    pub legacy_dir: Option<String>,
+}
+
+#[tauri::command]
+fn data_dir_info(state: State<'_, Mutex<AppState>>) -> Result<DataDirInfo, String> {
+    let (dir, layouts) = {
+        let s = state.lock().map_err(|_| "状态锁已损坏".to_string())?;
+        (s.data_dir.clone(), s.layouts_dir.clone())
+    };
+    let layout_count = std::fs::read_dir(&layouts)
+        .map(|it| {
+            it.flatten()
+                .filter(|e| e.file_name().to_string_lossy().ends_with(store::LAYOUT_EXT))
+                .count()
+        })
+        .unwrap_or(0);
+    Ok(DataDirInfo {
+        dir: dir.to_string_lossy().to_string(),
+        layout_count,
+        legacy_dir: datadir::legacy_dir_if_present().map(|p| p.to_string_lossy().to_string()),
+    })
+}
+
+/// 在文件资源管理器里打开数据目录
+#[tauri::command]
+fn open_data_dir(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
+    let dir = {
+        let s = state.lock().map_err(|_| "状态锁已损坏".to_string())?;
+        s.data_dir.clone()
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
+    std::process::Command::new("explorer")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| format!("打开目录失败: {e}"))?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// 把数据目录整体备份到用户选定的位置，返回备份目录路径。
+#[tauri::command]
+fn backup_data_dir(
+    state: State<'_, Mutex<AppState>>,
+    target: String,
+) -> Result<String, String> {
+    let root = {
+        let s = state.lock().map_err(|_| "状态锁已损坏".to_string())?;
+        s.data_dir.clone()
+    };
+    let stamp = crate::util::now_millis();
+    let dest = PathBuf::from(&target).join(format!("LabelDesk-备份-{stamp}"));
+    let n = datadir::backup_to(&root, &dest)?;
+    Ok(format!("{}（{} 个文件）", dest.to_string_lossy(), n))
+}
 // ---------------------------------------------------------------------------
 // 开机启动
 // ---------------------------------------------------------------------------

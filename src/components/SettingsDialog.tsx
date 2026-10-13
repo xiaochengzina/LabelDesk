@@ -1,12 +1,22 @@
 /**
  * 设置对话框。
  *
- * 只放与「程序行为」有关的开关（开机启动），跟标签内容无关的东西不往这里塞，
- * 免得操作员误改。
+ * 只放与「程序行为」有关的开关（小窗模式、开机启动）和数据位置信息，
+ * 跟标签内容无关的东西不往这里塞，免得操作员误改。
  */
 
 import { useCallback, useEffect, useState, type JSX } from "react";
-import { autostartStatus, setAutostart, type AutostartStatus } from "../api/backend";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  autostartStatus,
+  backupDataDir,
+  dataDirInfo,
+  enterQuickMode,
+  openDataDir,
+  setAutostart,
+  type AutostartStatus,
+  type DataDirInfo,
+} from "../api/backend";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -15,8 +25,10 @@ interface Props {
 
 export function SettingsDialog({ onClose }: Props): JSX.Element {
   const [status, setStatus] = useState<AutostartStatus | null>(null);
+  const [dataDir, setDataDir] = useState<DataDirInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,6 +39,11 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       });
+    dataDirInfo()
+      .then((d) => {
+        if (!cancelled) setDataDir(d);
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -40,20 +57,32 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const toggle = useCallback(
-    async (next: boolean) => {
-      setBusy(true);
-      setError(null);
-      try {
-        setStatus(await setAutostart(next));
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [],
-  );
+  const toggleAutostart = useCallback(async (next: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await setAutostart(next));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const doBackup = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const target = await openDialog({ directory: true, title: "选择备份位置" });
+      if (typeof target !== "string") return;
+      setNote(`已备份到 ${await backupDataDir(target)}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
 
   const enabled = status?.enabled ?? true;
 
@@ -68,13 +97,61 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
         </div>
 
         <div className="modal-body">
+          <div className="section-title">小窗模式</div>
+          <div className="hint">
+            把程序收成一条<strong>顶置</strong>的小窗，只留模板、粘贴框和打印按钮。
+            在表格里复制一行，直接粘到小窗按 Enter 就出纸，不用在表格和打印窗口之间来回切。
+          </div>
+          <div className="button-row">
+            <button
+              className="primary"
+              onClick={() => {
+                onClose();
+                void enterQuickMode();
+              }}
+            >
+              <Icon name="maximize" size={15} />
+              开启小窗模式
+            </button>
+          </div>
+          <div className="hint">
+            小窗右上角的第一个按钮可随时切回完整窗口；点关闭只是收起小窗，
+            程序仍在托盘里（右键托盘图标可退出）。
+          </div>
+
+          <div className="section-title">数据位置</div>
+          <div className="hint">
+            模板与应用配置统一放在<strong>安装目录下的 data\</strong>，便于整体备份和搬迁。
+          </div>
+          <div className="data-dir-path">{dataDir?.dir ?? "读取中…"}</div>
+          <div className="hint">
+            {dataDir ? `当前有 ${dataDir.layoutCount} 个模板。` : ""}
+            卸载程序时<strong>不会</strong>删除这个目录，重装后模板还在。
+          </div>
+          <div className="button-row">
+            <button className="ghost compact" onClick={() => void openDataDir()}>
+              <Icon name="folder-open" size={14} />
+              打开目录
+            </button>
+            <button className="ghost compact" disabled={busy} onClick={() => void doBackup()}>
+              <Icon name="download" size={14} />
+              备份到…
+            </button>
+          </div>
+          {dataDir?.legacyDir ? (
+            <div className="hint">
+              检测到旧数据目录仍在：<code>{dataDir.legacyDir}</code>
+              。数据已迁移到上面这个位置，确认无误后可以手动删掉旧目录。
+            </div>
+          ) : null}
+
           <div className="section-title">启动</div>
           <label className="check-row setting-row">
             <input
               type="checkbox"
               checked={enabled}
               disabled={busy || status === null}
-              onChange={(e) => void toggle(e.target.checked)}
+              onChange={(e) => void toggleAutostart(e.target.checked)}
             />
             <Icon name="power" size={15} />
             开机时自动启动 LabelDesk
@@ -83,19 +160,19 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
             {status === null
               ? "正在读取当前状态…"
               : enabled
-                ? "已登记开机启动。登录 Windows 后会自动运行，不需要去开始菜单找。"
+                ? "已登记开机启动。登录 Windows 后会自动运行。"
                 : "已取消开机启动，需要时手动打开即可。"}
           </div>
 
           <div className="section-title">关闭窗口时</div>
           <div className="hint">
-            点窗口右上角的关闭按钮会<strong>结束程序并释放内存</strong>，同时
-            <strong>在托盘保留一个图标</strong>。
+            关闭窗口只会销毁界面（释放内存），<strong>程序与托盘图标仍在</strong>。
             <br />
-            需要继续用时，点托盘图标即可重新打开（会重新加载模板，不影响已保存的内容）。
+            点托盘图标即可重新打开，会恢复你上次用的窗口形态。
             想彻底退出，右键托盘图标选「退出」。
           </div>
 
+          {note ? <div className="alert success">{note}</div> : null}
           {error ? <div className="alert error">{error}</div> : null}
         </div>
 

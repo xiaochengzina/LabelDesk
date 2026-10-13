@@ -20,7 +20,16 @@ import { listen } from "@tauri-apps/api/event";
 import { FillPrintPanel } from "./components/FillPrintPanel";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Icon, type IconName } from "./components/Icon";
-import { exportLayout, importLayout, listLayouts, readConfig, readLayout, saveLayout, writeConfig } from "./api/backend";
+import {
+  enterQuickMode,
+  exportLayout,
+  importLayout,
+  listLayouts,
+  readConfig,
+  readLayout,
+  saveLayout,
+  writeConfig,
+} from "./api/backend";
 import {
   alignElements,
   clearStatus,
@@ -103,8 +112,18 @@ export function App(): JSX.Element {
         </div>
         <button
           className="ghost compact settings-button"
+          onClick={() => {
+            void enterQuickMode();
+          }}
+          title="收成顶置小窗：在表格里复制一行，粘到小窗按 Enter 就打印"
+        >
+          <Icon name="maximize" size={15} />
+          小窗
+        </button>
+        <button
+          className="ghost compact"
           onClick={() => setShowSettings(true)}
-          title="设置：开机启动、关闭窗口后的行为"
+          title="设置：小窗模式、数据位置、开机启动"
         >
           <Icon name="settings-2" size={15} />
           设置

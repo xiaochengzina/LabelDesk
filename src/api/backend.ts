@@ -153,6 +153,51 @@ export function setAutostart(enabled: boolean): Promise<AutostartStatus> {
 }
 
 // ---------------------------------------------------------------------------
+// 数据目录
+// ---------------------------------------------------------------------------
+
+export interface DataDirInfo {
+  /** 数据根目录绝对路径（安装目录下的 data\） */
+  dir: string;
+  /** 模板数量 */
+  layoutCount: number;
+  /** 旧位置（%APPDATA%\com.labeldesk.app）若仍存在，便于提示清理 */
+  legacyDir: string | null;
+}
+
+export function dataDirInfo(): Promise<DataDirInfo> {
+  return call<DataDirInfo>("data_dir_info");
+}
+
+/** 在文件资源管理器里打开数据目录 */
+export function openDataDir(): Promise<string> {
+  return call<string>("open_data_dir");
+}
+
+/** 把数据目录备份到指定位置，返回备份路径 */
+export function backupDataDir(target: string): Promise<string> {
+  return call<string>("backup_data_dir", { target });
+}
+
+// ---------------------------------------------------------------------------
+// 小窗模式
+// ---------------------------------------------------------------------------
+
+/** 切到顶置小窗（隐藏完整窗口） */
+export function enterQuickMode(): Promise<void> {
+  return call<void>("enter_quick_mode");
+}
+
+/** 切回完整窗口 */
+export function exitQuickMode(): Promise<void> {
+  return call<void>("exit_quick_mode");
+}
+
+/** 关闭小窗（等价于切回完整窗口，不退出程序） */
+export function closeQuickMode(): Promise<void> {
+  return call<void>("close_quick_mode");
+}
+// ---------------------------------------------------------------------------
 // 模板
 // ---------------------------------------------------------------------------
 
