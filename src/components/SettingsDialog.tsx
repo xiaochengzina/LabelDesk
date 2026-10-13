@@ -115,8 +115,9 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
             </button>
           </div>
           <div className="hint">
-            小窗右上角的第一个按钮可随时切回完整窗口；点关闭只是收起小窗，
-            程序仍在托盘里（右键托盘图标可退出）。
+            小窗顶部左侧按钮切回完整窗口；右侧「关闭」与关闭完整窗口一样，
+            <strong>销毁界面并释放内存</strong>，程序留在托盘里，随时可从托盘再打开。
+            程序会记住你用的是哪种窗口，下次打开直接回到小窗。
           </div>
 
           <div className="section-title">数据位置</div>

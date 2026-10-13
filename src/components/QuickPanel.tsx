@@ -233,7 +233,7 @@ export function QuickPanel(): JSX.Element {
         </button>
         <button
           className="icon-button quick-btn"
-          title="收起小窗（不退出程序）"
+          title="关闭小窗并释放内存（程序留在托盘，随时可再打开）"
           onClick={() => void closeQuickMode()}
         >
           <Icon name="x" size={13} />

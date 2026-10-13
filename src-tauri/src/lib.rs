@@ -17,7 +17,7 @@ pub mod store;
 pub mod util;
 
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -33,6 +33,8 @@ const QUICK_WINDOW: &str = "quick";
 const EVENT_TRAY_REOPEN: &str = "tray-reopen";
 /// 小窗与完整窗口互切后通知前端刷新
 const EVENT_MODE_SWITCHED: &str = "mode-switched";
+/// 配置里记录「上次用的是不是小窗形态」，下次启动据此还原
+const PREF_QUICK_MODE: &str = "quickMode";
 
 
 /// 应用运行期状态。
@@ -300,18 +302,42 @@ pub fn run() {
                 eprintln!("[LabelDesk] 首次运行，已默认开启开机启动");
             }
 
+            // 上次退出时是不是小窗形态；启动时按它决定显示哪个窗口
+            let quick_mode = config
+                .get(PREF_QUICK_MODE)
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
             app.manage(Mutex::new(AppState {
                 data_dir,
                 layouts_dir,
                 printer_script,
-                quick_mode: false,
+                quick_mode,
             }));
 
             setup_tray(app)?;
 
-            // 配置里的窗口是隐藏声明的：这样托盘先就绪，再显示窗口，
+            // 配置里的窗口都是隐藏声明的：这样托盘先就绪再显示，
             // 不会出现「窗口已出现但点关闭没反应」的空窗期。
-            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            //
+            // 显示哪种形态取决于上次退出时用的是哪种（quick_mode，来自配置），
+            // 所以完全退出再打开也能回到小窗，不会莫名弹出一个大窗口。
+            if quick_mode {
+                match ensure_quick_window(app.handle()) {
+                    Ok(win) => {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                    Err(e) => {
+                        // 小窗建不起来就退回完整窗口，不能让程序看起来没启动
+                        eprintln!("[LabelDesk] {e}；改为显示完整窗口");
+                        if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
+                            let _ = main.show();
+                            let _ = main.set_focus();
+                        }
+                    }
+                }
+            } else if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                 let _ = window.show();
                 let _ = window.set_focus();
             } else {
@@ -326,8 +352,9 @@ pub fn run() {
         // 然后在 RunEvent::ExitRequested 里拒绝「最后一个窗口没了就退出进程」。
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                if window.label() == MAIN_WINDOW {
-                    // 销毁窗口 → WebView2 渲染进程随之退出
+                // 两种窗口的关闭行为一致：销毁 WebView（释放内存），
+                // 进程与托盘留着，随时可以从托盘回来。
+                if matches!(window.label(), MAIN_WINDOW | QUICK_WINDOW) {
                     let _ = window.destroy();
                 }
             }
@@ -400,13 +427,36 @@ fn ensure_quick_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> 
     .map_err(|e| format!("创建小窗失败: {e}"))
 }
 
+/// 把窗口形态写进配置，下次启动（含完全退出后重开）据此还原。
+///
+/// 失败只记日志：形态没存上不该影响这次切换。
+fn persist_mode(data_dir: &Path, quick: bool) {
+    // 注意：store 的配置路径是「layouts 目录的父级」，所以这里必须传 layouts 目录。
+    // 传 data_dir 会把配置写到 data\ 的上一级（曾因此写出一个只含 quickMode 的野文件）。
+    let layouts = data_dir.join("layouts");
+    let mut config = store::read_config(&layouts);
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert(PREF_QUICK_MODE.to_string(), serde_json::Value::Bool(quick));
+    }
+    if let Err(e) = store::write_config(&layouts, &config) {
+        eprintln!("[LabelDesk] 保存窗口形态失败: {e}");
+    }
+}
+
+
+
 /// 切到小窗形态：隐藏完整窗口，显示顶置小窗。
 #[tauri::command]
 fn enter_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    // 先记下形态，托盘据此还原
-    if let Ok(mut s) = state.lock() {
+    // 注意顺序：State 的锁在这个作用域内一直有效，若在持锁时再调
+    // 会取同一把锁的写入函数就会自死锁（之前 persist_mode 静默失败就是这个原因）。
+    // 所以先把需要的数据取出来，锁随作用域结束释放，再做落盘。
+    let data_dir = {
+        let mut s = state.lock().map_err(|_| "内部状态锁定失败".to_string())?;
         s.quick_mode = true;
-    }
+        s.data_dir.clone()
+    };
+    persist_mode(&data_dir, true);
 
     // 关键：**不能在命令里同步创建/显示窗口**。
     // Tauri 命令跑在主线程上，而在主线程里同步创建 WebView2 并 show()
@@ -447,9 +497,12 @@ fn show_quick_window(app: &AppHandle) {
 /// 切回完整窗口：隐藏小窗，显示并聚焦完整窗口。
 #[tauri::command]
 fn exit_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    if let Ok(mut s) = state.lock() {
+    let data_dir = {
+        let mut s = state.lock().map_err(|_| "内部状态锁定失败".to_string())?;
         s.quick_mode = false;
-    }
+        s.data_dir.clone()
+    };
+    persist_mode(&data_dir, false);
     let handle = app.clone();
     std::thread::spawn(move || {
         if let Some(quick) = handle.get_webview_window(QUICK_WINDOW) {
@@ -467,10 +520,19 @@ fn exit_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<
     Ok(())
 }
 
-/// 关闭小窗：直接切回完整窗口，而不是退出程序
+/// 关闭小窗：与关闭完整窗口一致 —— 销毁 WebView 释放内存，进程与托盘留着。
+///
+/// 刻意不做成「切回完整窗口」：那个按钮是「完整窗口」，语义不同。
+/// 这里要的是「先别占内存」，需要时点托盘或用完整窗口按钮再回来。
 #[tauri::command]
-fn close_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    exit_quick_mode(app, state)
+fn close_quick_mode(app: AppHandle, _state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        if let Some(quick) = handle.get_webview_window(QUICK_WINDOW) {
+            let _ = quick.destroy();
+        }
+    });
+    Ok(())
 }
 // ---------------------------------------------------------------------------
 // 系统托盘
