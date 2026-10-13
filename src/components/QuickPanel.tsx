@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   closeQuickMode,
   exitQuickMode,
@@ -186,6 +187,21 @@ export function QuickPanel(): JSX.Element {
     [canPrint, doPrint],
   );
 
+  /**
+   * 无边框窗口没有系统标题栏，拖动得自己做。
+   *
+   * 不用 `data-tauri-drag-region`：它只认「正好点在带该属性的元素上」，
+   * 按在图标或文字上就拖不动（"deep" 也依赖 Tauri 注入的脚本，实测不生效）。
+   * 直接调 startDragging() 最确定。
+   */
+  const startDrag = useCallback((e: React.MouseEvent) => {
+    // 按钮要保留点击行为，不能当成拖动区
+    if ((e.target as HTMLElement).closest("button")) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    // 需要 core:window:allow-start-dragging 权限（已写在 capabilities/default.json）
+    void getCurrentWindow().startDragging();
+  }, []);
   const summary = fill
     ? fill.warnings.length > 0
       ? fill.warnings[0]
@@ -194,21 +210,30 @@ export function QuickPanel(): JSX.Element {
 
   return (
     <div className="quick-root">
-      {/* 无边框窗口，自绘一条可拖动的标题栏 */}
-      <div className="quick-titlebar" data-tauri-drag-region>
-        <Icon name="printer" size={13} />
+      {/*
+        操作栏，同时充当小窗的「标题栏」（无边框窗口没有系统标题栏）。
+
+        用 `data-tauri-drag-region="deep"` 而不是裸属性：
+        裸属性只认「直接点在该元素上」，按在图标或文字上就拖不动；
+        `deep` 让整个子树都能触发拖动，而按钮等可点击元素
+        （Tauri 的 CLICKABLE_TAGS）会自动被排除，所以两个按钮照常可点。
+      */}
+      <div className="quick-toolbar" onMouseDown={startDrag}>
+        <span className="quick-grip">
+          <Icon name="printer" size={13} />
+        </span>
         <span className="quick-title">速打</span>
-        <span className="quick-spacer" data-tauri-drag-region />
+        <span className="quick-spacer" />
         <button
           className="icon-button quick-btn"
-          title="切回完整窗口"
+          title="切回完整窗口 (Esc)"
           onClick={() => void exitQuickMode()}
         >
           <Icon name="maximize" size={13} />
         </button>
         <button
           className="icon-button quick-btn"
-          title="关闭小窗（不退出程序）"
+          title="收起小窗（不退出程序）"
           onClick={() => void closeQuickMode()}
         >
           <Icon name="x" size={13} />

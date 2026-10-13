@@ -372,9 +372,9 @@ pub fn run() {
 // 小窗模式
 // ---------------------------------------------------------------------------
 
-/// 速打小窗的逻辑尺寸。窄而矮，顶置在表格旁边不挡视线。
+/// 速打小窗的逻辑尺寸（无边框，整块都是内容区）。窄而矮，顶置在表格旁边不挡视线。
 const QUICK_W: f64 = 470.0;
-const QUICK_H: f64 = 210.0;
+const QUICK_H: f64 = 200.0;
 
 /// 建好小窗（隐藏）。首次切到小窗时创建，之后复用。
 fn ensure_quick_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
@@ -392,7 +392,8 @@ fn ensure_quick_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> 
     .resizable(true)
     // 顶置：粘贴时不用来回切窗口
     .always_on_top(true)
-    // 无边框标题栏：只留我们自己画的那一条，省高度
+    // 不用系统标题栏：小窗要尽量省高度，只保留自己画的一条操作栏。
+    // 代价是拖动要自己做（见 QuickPanel 的 drag-region）。
     .decorations(false)
     .visible(false)
     .build()

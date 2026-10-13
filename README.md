@@ -109,6 +109,10 @@ npm run app:build           # 打包发布版（NSIS + MSI）
 
 产物位于 `src-tauri/target/release/bundle/`。
 
+> **`cargo` 必须在 PATH 里**，否则 `tauri dev` / `tauri build` 会报
+> `failed to run 'cargo metadata' ... program not found`。
+> rustup 默认装在 `%USERPROFILE%\.cargo\bin`，若该目录不在 PATH，把它加上并重开终端。
+
 安装包用 **per-user 模式**（`installMode: "currentUser"`），因此：
 
 - 装到 `%LOCALAPPDATA%\LabelDesk`，**双击即装，不需要管理员权限、不弹 UAC**
@@ -197,9 +201,11 @@ C:\Users\<你>\AppData\Local\LabelDesk\data\
 几个细节：
 
 - **顶置**：小窗始终浮在表格上面，粘贴时不用切窗口
-- **无边框**：整条标题栏可拖动，右上角 ⛶ 切回完整窗口、✕ 收起小窗（不退出程序）
+- **无边框**：不带系统标题栏，省下的高度都留给内容；顶部那一条既当标题栏
+  （按住任意空白处即可拖动窗口）又放两个操作：左「完整窗口」、右「收起」（都不退出程序）
 - **打完自动清空并保持焦点**：可以连着打下一台
 - **选中模板**会记住，下次打开还是它
+- **Esc** 切回完整窗口
 - 托盘恢复时会**还原你上次用的形态**：上次是小窗就回到小窗，不会突然弹出大窗口
 
 ---

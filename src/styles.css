@@ -1453,27 +1453,42 @@ body.quick-window {
   user-select: none;
 }
 
+/* 无边框小窗：直角、无自绘边框，靠一条自绘操作栏当标题栏 */
 .quick-root {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
   background: var(--panel);
 }
 
-/* 自绘标题栏：整条可拖动 */
-.quick-titlebar {
+/* 操作栏 = 标题栏。整条可拖动，只有按钮例外 */
+.quick-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 6px 5px 10px;
+  gap: 4px;
+  padding: 4px 5px 4px 8px;
   background: var(--panel-2);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
   cursor: move;
+}
+
+/* drag-region 必须覆盖到每个可见子元素，否则按在字/图标上拖不动 */
+.quick-grip,
+.quick-title,
+.quick-spacer,
+.quick-toolbar .icon,
+.quick-toolbar .quick-title {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.quick-grip {
+  display: flex;
+  align-items: center;
+  color: var(--text-dim);
 }
 
 .quick-title {
@@ -1489,7 +1504,7 @@ body.quick-window {
 }
 
 .quick-btn {
-  padding: 3px 5px;
+  padding: 2px 4px;
   cursor: pointer;
 }
 
