@@ -394,7 +394,6 @@ fn ensure_quick_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> 
     .always_on_top(true)
     // 无边框标题栏：只留我们自己画的那一条，省高度
     .decorations(false)
-    .skip_taskbar(true)
     .visible(false)
     .build()
     .map_err(|e| format!("创建小窗失败: {e}"))
@@ -403,50 +402,67 @@ fn ensure_quick_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> 
 /// 切到小窗形态：隐藏完整窗口，显示顶置小窗。
 #[tauri::command]
 fn enter_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let win = ensure_quick_window(&app)?;
-    if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
-        let _ = main.hide();
-    }
-    win.show().map_err(|e| e.to_string())?;
-    let _ = win.set_focus();
+    // 先记下形态，托盘据此还原
     if let Ok(mut s) = state.lock() {
         s.quick_mode = true;
     }
+
+    // 关键：**不能在命令里同步创建/显示窗口**。
+    // Tauri 命令跑在主线程上，而在主线程里同步创建 WebView2 并 show()
+    // 会卡住事件循环（实测：窗口被创建出来但始终不可见，命令永不返回）。
+    // 丢到后台线程做，命令立刻返回。
+    let handle = app.clone();
+    std::thread::spawn(move || switch_to_quick(&handle));
     Ok(())
+}
+
+/// 切到小窗形态（在后台线程执行）
+fn switch_to_quick(app: &AppHandle) {
+    let win = match ensure_quick_window(app) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("[LabelDesk] {e}");
+            return;
+        }
+    };
+    if let Err(e) = win.show() {
+        eprintln!("[LabelDesk] 显示小窗失败: {e}");
+    }
+    let _ = win.set_focus();
+    if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = main.hide();
+    }
 }
 
 /// 从托盘/快捷键切回小窗
 fn show_quick_window(app: &AppHandle) {
-    match ensure_quick_window(app) {
-        Ok(win) => {
-            let _ = win.show();
-            let _ = win.set_focus();
-            if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
-                let _ = main.hide();
-            }
-            let _ = app.emit(EVENT_MODE_SWITCHED, "quick");
-        }
-        Err(e) => eprintln!("[LabelDesk] {e}"),
-    }
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        switch_to_quick(&handle);
+        let _ = handle.emit(EVENT_MODE_SWITCHED, "quick");
+    });
 }
 
 /// 切回完整窗口：隐藏小窗，显示并聚焦完整窗口。
 #[tauri::command]
 fn exit_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    if let Some(quick) = app.get_webview_window(QUICK_WINDOW) {
-        let _ = quick.hide();
-    }
-    if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
-        main.show().map_err(|e| e.to_string())?;
-        let _ = main.unminimize();
-        let _ = main.set_focus();
-    } else {
-        open_main_window(&app);
-    }
     if let Ok(mut s) = state.lock() {
         s.quick_mode = false;
     }
-    let _ = app.emit(EVENT_MODE_SWITCHED, "full");
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        if let Some(quick) = handle.get_webview_window(QUICK_WINDOW) {
+            let _ = quick.hide();
+        }
+        if let Some(main) = handle.get_webview_window(MAIN_WINDOW) {
+            let _ = main.show();
+            let _ = main.unminimize();
+            let _ = main.set_focus();
+        } else {
+            open_main_window(&handle);
+        }
+        let _ = handle.emit(EVENT_MODE_SWITCHED, "full");
+    });
     Ok(())
 }
 
