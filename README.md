@@ -25,6 +25,10 @@
 
 ![设计界面](docs/screenshot.png)
 
+### 速打小窗
+
+![速打小窗](docs/screenshot-quick.png)
+
 ---
 
 ## 目录
@@ -33,11 +37,9 @@
 - [它能做什么](#它能做什么)
 - [环境要求](#环境要求)
 - [快速开始](#快速开始)
+- [数据放在哪里](#数据放在哪里)
+- [小窗模式（速打）](#小窗模式速打)
 - [日常使用：打标签](#日常使用打标签)
-- [数据放在哪里](#数据放在哪里)
-- [小窗模式（速打）](#小窗模式速打)
-- [数据放在哪里](#数据放在哪里)
-- [小窗模式（速打）](#小窗模式速打)
 - [托盘与开机启动](#托盘与开机启动)
 - [管理员：设计模板与字段映射](#管理员设计模板与字段映射)
 - [打印通路说明](#打印通路说明)
@@ -80,6 +82,9 @@
 - **条码**：Code 128 / Code 39 / EAN-13 / EAN-8 / UPC-A / ITF-14，以及 QR 二维码（UTF-8，支持中文）。
 - **变量占位符**：内容里写 `{{订单号}}`，打印前集中填值，一套版式反复用。
 - **模板管理**：保存 / 另存 / 导入 / 导出，模板是可直接阅读和版本管理的 JSON。
+- **速打小窗**：顶置的无边框小窗，只留模板、粘贴框和打印按钮，在表格旁边粘一行按 Enter 就出纸。
+- **托盘驻留 + 开机启动**：关闭窗口销毁界面释放内存，程序留在托盘；默认开机自启（可在设置里关）。
+- **数据可搬可备份**：模板与配置统一放在安装目录的 `data\`，设置页可「打开目录 / 备份到…」。
 - **位图二值化**：热敏纸只有黑白两态，渲染阶段即做阈值化，避免灰度抖动网点糊字。
 
 ---
@@ -116,19 +121,19 @@ npm run app:build           # 打包发布版（NSIS + MSI）
 安装包用 **per-user 模式**（`installMode: "currentUser"`），因此：
 
 - 装到 `%LOCALAPPDATA%\LabelDesk`，**双击即装，不需要管理员权限、不弹 UAC**
-- 程序以普通用户身份运行，模板与配置写在 `%APPDATA%\com.labeldesk.app\`
+- 程序以普通用户身份运行；模板与配置写在安装目录下的 `data\`（见[数据放在哪里](#数据放在哪里)）
 - 卸载干净，`C:\Program Files` 下不留任何东西
 
 > 之所以不用 `perMachine`：那会装进 `Program Files`，安装时弹 UAC，
-> 而且安装器提权运行会让程序也以管理员身份启动，数据被写进**管理员账户的**
-> `%APPDATA%`，平时登录的账户反而看不到自己的模板。自用工具没必要。
+> 而且安装器提权运行会让程序也以管理员身份启动，容易把数据写进**管理员账户**的目录，
+> 平时登录的账户反而看不到自己的模板。自用工具没必要。
 
 ### 设计并打印一张标签
 
 1. 左侧「标签」页选择纸张规格（如 40 × 30 mm），或自定义尺寸。
 2. 左侧「元素」页添加文本 / 一维码 / 二维码 / 图片 / 形状。
 3. 画布上拖动摆位；右侧属性面板改内容、字号、条码格式等。
-4. 点工具栏「打印…」，选择打印机与打印方式，点「打印」。
+4. 点工具栏「打印测试…」，选打印机与打印方式，点「打印」。
 5. 保存后的模板可在「打开」里随时调出。
 
 ### 真机自检
@@ -162,7 +167,9 @@ C:\Users\<你>\AppData\Local\LabelDesk\data\
 ```
 
 设置页里有「**打开目录**」和「**备份到…**」两个按钮，不用自己去翻路径。
-开发态（`cargo run`）数据会落在仓库根的 `data\`，与打包后行为一致。
+> **规则**：数据目录 = **可执行文件所在目录下的 `data\`**。
+> 所以开发态（`cargo run`）落在 `<项目根>\src-tauri\data\`，
+> 打包后落在 `<安装目录>\data\`——行为一致，只是可执行文件位置不同。
 
 ### 从旧位置迁移
 
@@ -187,14 +194,19 @@ C:\Users\<你>\AppData\Local\LabelDesk\data\
 所以做了个**顶置小窗**，模式栏点「**小窗**」或设置页点「开启小窗模式」即可：
 
 ```
-┌─ ⬓ 速打 ──────────────────── ⛶  ✕ ─┐
-│ [笔记本标签 ▾]        Deli DL-888D… │
-│ ┌─────────────────────────────────┐ │
+┌──────────────────────────────────────┐
+│ 🖨 速打                    ⛶    ✕   │  ← 按住这一条任意处可拖动窗口
+├──────────────────────────────────────┤
+│ [笔记本标签 ▾]         Deli DL-888D… │
+│ ┌──────────────────────────────────┐ │
 │ │ 粘贴表格里的一行，按 Enter 打印   │ │
-│ └─────────────────────────────────┘ │
-│ 3 项已识别                    [ 打印 ] │
-└─────────────────────────────────────┘
+│ └──────────────────────────────────┘ │
+│ 3 项已识别                   [ 打印 ] │
+└──────────────────────────────────────┘
+   ⛶ 完整窗口    ✕ 关闭（释放内存）
 ```
+
+![速打小窗](docs/screenshot-quick.png)
 
 用法就是三步：在表格里 `Ctrl+C` 一行 → 切到小窗 `Ctrl+V` → **按 Enter**。
 
@@ -287,10 +299,10 @@ C:\Users\<你>\AppData\Local\LabelDesk\data\
 
 | 菜单项 | 作用 |
 | --- | --- |
-| 打开 LabelDesk | 重新打开主窗口（等价于左键点击托盘图标） |
+| 打开 LabelDesk | 按**上次用的形态**打开（上次是小窗就回到小窗） |
 | 退出 | 结束进程（连同托盘图标一起消失） |
 
-左键直接点托盘图标也会打开主窗口（不弹菜单，少一步）。
+左键直接点托盘图标同样是这个行为（不弹菜单，少一步）。
 
 > Windows 11 默认把新的托盘图标收进「显示隐藏的图标」折叠区（任务栏上的 `^`）。
 > 想让 LabelDesk 一直可见，把它从折叠区拖到任务栏上即可。
@@ -312,9 +324,9 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
   LabelDesk = <程序路径>
 ```
 
-> 安装包是 perMachine 安装，程序在 `Program Files` 下。这里用 HKCU 而不是 HKLM，
-> 所以开机启动只对当前登录用户生效，也不需要管理员权限。
-> 个人自用场景下这样更合适；如果你需要所有用户都自启，告诉我改成 HKLM。
+> 这里用 HKCU（当前用户）而不是 HKLM（所有用户），与安装模式（per-user）作用域一致，
+> 也不需要管理员权限。个人自用场景下这样更合适；
+> 如果你需要所有用户都自启，告诉我改成 HKLM —— 那要求程序以管理员身份运行。
 
 ---
 
@@ -490,7 +502,7 @@ node scripts/verify-qr.mjs     # 二维码：交给真实解码器 jsQR 反解
 
 ## 模板文件格式
 
-模板是纯 JSON，保存于 `%APPDATA%\com.labeldesk.app\layouts\<名称>.ldl.json`。
+模板是纯 JSON，保存于 `<安装目录>\data\layouts\<名称>.ldl.json`。
 
 ```jsonc
 {
@@ -650,6 +662,7 @@ registerElement(keyValueDef);
 
 ```powershell
 npm run verify:all             # 一键跑完前端全部验证（类型检查 + 条码 + 变量 + DPI）
+npm run typecheck              # 只做 TypeScript 类型检查
 npm run build                  # 前端打包
 npm run app:build              # 打包发布版（NSIS + MSI）
 
@@ -669,6 +682,7 @@ cargo run --example print_image -- <png> <wPx> <hPx> <wMm> <hMm> [打印机]  # 
 | `npm run verify:fill` | 粘贴解析与字段映射（表格整行 / CSV / 逐单元格 / 列数不符） |
 | `npm run verify:dpi` | 同一模板在 203/300/600 dpi 下物理尺寸一致性 |
 | `npm run verify:render` | 端到端：真实渲染器生成标签 PNG（加 `--print` 可真机打印） |
+| `node --import ./scripts/loader-register.mjs scripts/verify-testdata.mjs` | 让 `testdata/` 里每条测试数据都过一遍真实解析器与渲染器 |
 | `node scripts/selfcheck-qr.mjs` | 按规范读回 QR 数据位流，不依赖第三方实现 |
 | `node scripts/make-icons.mjs` | 从 Lucide 生成 `src/components/icons.ts`（仅在增删图标时需要跑） |
 | `node scripts/make-test-rows.mjs` | 生成 `testdata/` 下的实机测试数据 |
@@ -744,15 +758,17 @@ LabelDesk/
 │   │   ├── DesignCanvas.tsx      # 设计画布（拖拽/缩放/旋转/框选）
 │   │   ├── LeftPanel.tsx         # 元素库 / 图层 / 标签设置
 │   │   ├── PropertiesPanel.tsx   # 属性面板（由元素注册表驱动）
-│   │   ├── PrintDialog.tsx       # 打印参数对话框（设计模式下的测试打印）
+│   │   ├── PrintDialog.tsx       # 打印参数对话框
 │   │   ├── TemplateManager.tsx   # 模板导入导出与删除
-│   │   └── VariablePanel.tsx     # 变量默认值编辑
-│   ├── components/
+│   │   ├── SettingsDialog.tsx    # 设置（小窗、数据位置、开机启动）
+│   │   ├── VariablePanel.tsx     # 变量默认值编辑
 │   │   ├── Icon.tsx              # 图标组件（内联 SVG，颜色继承 currentColor）
 │   │   └── icons.ts              # 图标数据，由 scripts/make-icons.mjs 自动生成
 │   ├── api/backend.ts            # Tauri 命令绑定
-│   ├── App.tsx / main.tsx / styles.css
-│   └── index.html
+│   ├── main.tsx                  # 入口：按窗口标签渲染完整界面或小窗
+│   └── App.tsx / styles.css
+├── index.html                    # Vite 入口（在仓库根）
+├── vite.config.ts                # 固定端口 5183
 ├── src-tauri/                    # 后端（Rust）
 │   ├── src/
 │   │   ├── lib.rs                # 命令注册、系统托盘、开机启动、应用状态
@@ -772,16 +788,25 @@ LabelDesk/
 │   ├── verify-qr.mjs             # 二维码 jsQR 解码
 │   ├── verify-variables.mjs      # 变量替换
 │   ├── verify-fill.mjs           # 粘贴解析与字段映射
-│   ├── make-sample-template.mjs  # 生成示例「笔记本标签」模板
-│   ├── preview-template.mjs      # 渲染模板预览（示例数据/粘贴数据）
-│   ├── capture-ui.ps1            # 启动应用并截图（开发验证用）
+│   ├── verify-testdata.mjs       # 实机测试数据逐条过解析器与渲染器
 │   ├── verify-dpi.mjs            # DPI 无关性
 │   ├── e2e-print.mjs             # 端到端渲染 + 可选真机打印
 │   ├── selfcheck-qr.mjs          # QR 位流自检
 │   ├── qr-reference.cjs          # QR 码字流参考实现（仅用于对照）
+│   ├── make-icons.mjs            # 从 Lucide 生成图标模块
+│   ├── make-test-rows.mjs        # 生成实机测试数据（testdata/）
+│   ├── make-sample-template.mjs  # 生成示例「笔记本标签」模板
+│   ├── restore-user-template.mjs # 按用户版式重建模板（模板丢失时用）
+│   ├── preview-template.mjs      # 渲染模板预览（示例数据/粘贴数据）
+│   ├── capture-ui.ps1            # 启动应用并截图（开发验证用）
 │   └── loader.mjs / loader-register.mjs  # Node ESM 解析钩子
+├── testdata/                     # 实机测试数据（制表符分隔，可直接粘贴）
 └── docs/                         # 截图与端到端预览
 ```
+
+> 几个容易找错的位置：Vite 入口 `index.html` 在**仓库根**（不在 `src/`）；
+> 开发态数据在 `src-tauri\data\`；`src-tauri/target/`、`node_modules/`、`dist/`
+> 以及开发态 `data/` 都在 `.gitignore` 里。
 
 ---
 
@@ -796,7 +821,7 @@ LabelDesk/
 | [@napi-rs/canvas](https://github.com/Brooooooklyn/canvas) | 仅开发期：在 Node 中跑真实渲染器做端到端预览 | MIT |
 
 图标通过 scripts/make-icons.mjs 在构建期从 @iconify-json/lucide 提取，
-只生成实际用到的 45 个图标，**运行时不引入任何图标库，也不联网**。
+只生成实际用到的 47 个图标，**运行时不引入任何图标库，也不联网**。
 生成的 src/components/icons.ts 已提交，因此正常构建不依赖该脚本。
 
 ---
@@ -809,6 +834,6 @@ MIT License。
 
 - 因使用本程序造成的标签耗材浪费、打印设备损坏或业务损失；
 - 条码/二维码在特定扫码设备上无法识别的风险（虽已做解码验证，但不同设备灵敏度有差异）；
-- 模板数据丢失（模板保存于 `%APPDATA%\com.labeldesk.app\layouts\`，请自行备份）。
+- 模板数据丢失（模板保存于安装目录的 `data\layouts\`；设置页有「备份到…」按钮，请自行备份）。
 
 使用前请先用**少量标签纸试打**确认效果。
