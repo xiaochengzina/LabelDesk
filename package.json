@@ -1,7 +1,7 @@
 {
   "name": "labeldesk",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.1",
   "type": "module",
   "description": "LabelDesk - Windows 标签设计与热敏打印工具",
   "scripts": {

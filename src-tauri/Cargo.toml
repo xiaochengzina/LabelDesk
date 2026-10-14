@@ -1,6 +1,6 @@
 [package]
 name = "labeldesk"
-version = "0.1.0"
+version = "0.0.1"
 description = "LabelDesk - Windows 标签设计与热敏打印工具"
 authors = ["LabelDesk"]
 edition = "2021"
