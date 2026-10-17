@@ -384,6 +384,7 @@ pub fn run() {
             print_history_check,
             print_history_append,
             print_history_recent,
+            print_history_search,
             print_history_clear,
             diagnostics,
         ])
@@ -462,6 +463,21 @@ fn print_history_recent(
     all.reverse();
     all.truncate(limit.max(1));
     Ok(all)
+}
+
+/// 按关键字搜索历史（序列号 / 型号 / 模板），新的在前
+#[tauri::command]
+fn print_history_search(
+    query: String,
+    limit: usize,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<Vec<printlog::PrintRecord>, String> {
+    let dir = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .data_dir
+        .clone();
+    Ok(printlog::search(&dir, &query, limit))
 }
 
 #[tauri::command]

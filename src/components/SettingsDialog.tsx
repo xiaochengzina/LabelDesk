@@ -15,6 +15,7 @@ import {
   openDataDir,
   printHistoryClear,
   printHistoryRecent,
+  printHistorySearch,
   setAutostart,
   type AutostartStatus,
   type DataDirInfo,
@@ -35,6 +36,8 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
   const [note, setNote] = useState<string | null>(null);
   const [history, setHistory] = useState<PrintRecord[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [searchResult, setSearchResult] = useState<PrintRecord[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +102,21 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
       setBusy(false);
     }
   }, []);
+
+  // 输入防抖：避免每敲一个字都读一遍历史文件
+  useEffect(() => {
+    const q = historyQuery.trim();
+    if (!q) {
+      setSearchResult(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      printHistorySearch(q, 100)
+        .then(setSearchResult)
+        .catch(() => setSearchResult([]));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [historyQuery]);
 
   const doClearHistory = useCallback(async () => {
     if (!confirm("确定清空打印历史？清空后无法再提醒重复打印。")) return;
@@ -180,22 +198,42 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
             标签贴上去撕不下来，重复打印等于浪费一张纸。
           </div>
           {historyLoaded ? (
-            history.length === 0 ? (
-              <div className="empty-hint">还没有打印记录。</div>
-            ) : (
-              <ul className="history-list">
-                {history.map((h, i) => (
-                  <li key={`${h.atMs}-${i}`}>
-                    <span className="history-when">{formatAt(h.atMs)}</span>
-                    <span className="history-serial">{h.serial || "—"}</span>
-                    <span className="history-summary" title={h.summary}>
-                      {h.summary || h.template}
-                    </span>
-                    {h.quick ? <span className="hint-inline">小窗</span> : null}
-                  </li>
-                ))}
-              </ul>
-            )
+            <>
+              <input
+                type="text"
+                className="history-search"
+                value={historyQuery}
+                placeholder="搜索序列号 / 型号 / 模板名"
+                onChange={(e) => setHistoryQuery(e.target.value)}
+              />
+              {(() => {
+                const shown = searchResult ?? history;
+                if (shown.length === 0) {
+                  return (
+                    <div className="empty-hint">
+                      {searchResult ? "没有匹配的记录。" : "还没有打印记录。"}
+                    </div>
+                  );
+                }
+                return (
+                  <ul className="history-list">
+                    {shown.map((h, i) => (
+                      <li key={`${h.atMs}-${i}`}>
+                        <span className="history-when">{formatAt(h.atMs)}</span>
+                        <span className="history-serial">{h.serial || "—"}</span>
+                        <span className="history-summary" title={h.summary}>
+                          {h.summary || h.template}
+                        </span>
+                        {h.quick ? <span className="hint-inline">小窗</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+              {searchResult ? (
+                <div className="hint">找到 {searchResult.length} 条匹配（最多显示 100 条）</div>
+              ) : null}
+            </>
           ) : (
             <div className="hint">读取中…</div>
           )}

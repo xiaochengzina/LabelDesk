@@ -229,6 +229,11 @@ export function printHistoryRecent(limit = 50): Promise<PrintRecord[]> {
   return call<PrintRecord[]>("print_history_recent", { limit });
 }
 
+/** 按关键字搜索历史（序列号 / 型号 / 模板），新的在前 */
+export function printHistorySearch(query: string, limit = 100): Promise<PrintRecord[]> {
+  return call<PrintRecord[]>("print_history_search", { query, limit });
+}
+
 export function printHistoryClear(): Promise<void> {
   return call<void>("print_history_clear");
 }

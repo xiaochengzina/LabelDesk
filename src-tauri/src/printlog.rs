@@ -19,6 +19,14 @@ use std::path::{Path, PathBuf};
 const HISTORY_FILE: &str = "print-history.jsonl";
 /// 上限条数，超过后裁剪
 const MAX_ENTRIES: usize = 5000;
+/// 裁剪时保留多少条（留出余量，避免每打印一次就重写整个文件）
+const TRIM_KEEP: usize = 4000;
+/// 触发裁剪的文件字节数阈值。
+///
+/// 用文件大小而不是「读一遍数行数」来判断是否超限：
+/// 判重已经每秒可能被调用，追加路径不应该再额外读整个文件。
+/// 单条约 140 字节，5000 条约 700 KB，这里取 760 KB 作为阈值。
+const TRIM_BYTES: u64 = 760 * 1024;
 /// 判重时只看最近多久的记录（天）
 pub const DEDUPE_WINDOW_DAYS: i64 = 90;
 
@@ -95,10 +103,18 @@ pub fn append(data_dir: &Path, record: &PrintRecord) -> Result<(), String> {
     writeln!(file, "{line}").map_err(|e| format!("写入打印历史失败: {e}"))?;
     drop(file);
 
-    // 超限才裁剪：读一遍、保留尾部、原子替换
+    // 只在文件明显超限时才读整个文件并裁剪。
+    // 用文件大小预筛，正常打印路径不碰这一步（原来每条都要 read_all，实测 60ms）。
+    let too_big = std::fs::metadata(&path)
+        .map(|m| m.len() > TRIM_BYTES)
+        .unwrap_or(false);
+    if !too_big {
+        return Ok(());
+    }
+
     let all = read_all(data_dir);
     if all.len() > MAX_ENTRIES {
-        let keep = &all[all.len() - MAX_ENTRIES / 2..];
+        let keep = &all[all.len() - TRIM_KEEP..];
         let tmp = path.with_extension("jsonl.tmp");
         let body: String = keep
             .iter()
@@ -157,6 +173,28 @@ pub fn clear(data_dir: &Path) -> Result<(), String> {
         std::fs::remove_file(&path).map_err(|e| format!("清空打印历史失败: {e}"))?;
     }
     Ok(())
+}
+
+/// 按关键字搜索历史（序列号 / 型号 / 模板名，大小写不敏感），新的在前。
+///
+/// 历史攒到几千条时，「上次这台机器打过吗」只能靠搜。
+pub fn search(data_dir: &Path, query: &str, limit: usize) -> Vec<PrintRecord> {
+    let q = query.trim().to_lowercase();
+    let all = read_all(data_dir);
+    let mut hit: Vec<PrintRecord> = if q.is_empty() {
+        all
+    } else {
+        all.into_iter()
+            .filter(|r| {
+                r.serial.to_lowercase().contains(&q)
+                    || r.summary.to_lowercase().contains(&q)
+                    || r.template.to_lowercase().contains(&q)
+            })
+            .collect()
+    };
+    hit.reverse(); // 新的在前
+    hit.truncate(limit.max(1));
+    hit
 }
 
 #[cfg(test)]
@@ -266,23 +304,44 @@ mod tests {
     #[test]
     fn trimming_keeps_latest_entries() {
         let dir = temp_dir("trim");
-        // 直接写超过上限的行，验证裁剪后保留的是尾部
+        // 造一个超过字节阈值的文件，验证触发裁剪后保留的是尾部
         let path = history_path(&dir);
         let mut body = String::new();
-        for i in 0..(MAX_ENTRIES + 10) {
-            let r = rec(&format!("SN{i}"), (i as u128) + 1);
+        let mut written = 0usize;
+        while (body.len() as u64) <= TRIM_BYTES + 4096 {
+            let r = rec(&format!("SN{written}"), (written as u128) + 1);
             body.push_str(&serde_json::to_string(&r).unwrap());
             body.push('\n');
+            written += 1;
         }
-        std::fs::write(&path, body).unwrap();
+        std::fs::write(&path, &body).unwrap();
         append(&dir, &rec("NEWEST", now_ms())).unwrap();
+
         let all = read_all(&dir);
-        assert!(all.len() <= MAX_ENTRIES, "裁剪后不应超过上限");
+        assert!(
+            all.len() <= TRIM_KEEP + 1,
+            "裁剪后应回落到 {} 条左右，实际 {}",
+            TRIM_KEEP,
+            all.len()
+        );
         assert_eq!(
             all.last().map(|r| r.serial.as_str()),
             Some("NEWEST"),
-            "最新一条必须在"
+            "最新一条必须保留"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 正常追加不应读取整个文件（回归：曾因每条都 read_all 而耗时 60ms）
+    #[test]
+    fn append_is_cheap_when_under_size_threshold() {
+        let dir = temp_dir("cheap");
+        for i in 0..50 {
+            append(&dir, &rec(&format!("S{i}"), (i as u128) + 1)).unwrap();
+        }
+        let size = std::fs::metadata(history_path(&dir)).unwrap().len();
+        assert!(size < TRIM_BYTES, "50 条远小于阈值");
+        assert_eq!(read_all(&dir).len(), 50);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -312,5 +371,75 @@ mod tests {
         let parsed: PrintRecord = serde_json::from_str(raw).unwrap();
         assert_eq!(parsed.serial, "OLD1");
         assert_eq!(parsed.at_ms, 1700000000000);
+    }
+
+    /// 性能基准（默认跳过，手动跑）：`cargo test --lib bench_ -- --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_full_history() {
+        let dir = temp_dir("bench");
+        let now = now_ms();
+        for i in 0..MAX_ENTRIES {
+            let mut r = rec(&format!("PF{:06}", i), now - (i as u128) * 60_000);
+            r.summary = "ThinkPad X1 Carbon Gen 9".into();
+            append(&dir, &r).unwrap();
+        }
+        let bytes = std::fs::metadata(history_path(&dir)).map(|m| m.len()).unwrap_or(0);
+        println!("\n--- 满容量基准 ---");
+        println!("记录数: {}", read_all(&dir).len());
+        println!("文件大小: {} KB", bytes / 1024);
+
+        let t = std::time::Instant::now();
+        let all = read_all(&dir);
+        println!("read_all: {:?}（{} 条）", t.elapsed(), all.len());
+
+        // 命中最新一条（最坏情况要扫到末尾才发现，实际是从新到旧，命中很快）
+        let t = std::time::Instant::now();
+        let hits = find_recent_duplicates(&dir, &["PF000000".to_string()]);
+        println!("判重（命中最近）: {:?}，{} 条命中", t.elapsed(), hits.len());
+
+        // 不命中（必须扫完整个 90 天窗口）
+        let t = std::time::Instant::now();
+        let hits = find_recent_duplicates(&dir, &["NOSUCHSERIAL".to_string()]);
+        println!("判重（未命中，扫全窗口）: {:?}，{} 条命中", t.elapsed(), hits.len());
+
+        let t = std::time::Instant::now();
+        let _ = append(&dir, &rec("NEWONE", now));
+        println!("追加一条: {:?}", t.elapsed());
+        println!("---\n");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_matches_serial_and_summary() {
+        let dir = temp_dir("search");
+        let now = now_ms();
+        append(&dir, &rec("PF2ABCDE", now - 3000)).unwrap();
+        let mut other = rec("ZZZ999", now - 2000);
+        other.summary = "Dell Latitude".into();
+        append(&dir, &other).unwrap();
+
+        // 按序列号（大小写不敏感）
+        let r = search(&dir, "pf2abc", 10);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].serial, "PF2ABCDE");
+
+        // 按型号
+        let r = search(&dir, "latitude", 10);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].serial, "ZZZ999");
+
+        // 空查询返回全部，且新的在前
+        let r = search(&dir, "", 10);
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].serial, "ZZZ999", "最新的应在最前");
+
+        // 无命中
+        assert!(search(&dir, "NOSUCH", 10).is_empty());
+
+        // limit 生效
+        assert_eq!(search(&dir, "", 1).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
