@@ -49,6 +49,12 @@ import { renderToDataUrl } from "./renderer/renderer";
 
 type Mode = "print" | "design" | "history";
 
+/** 复打请求：历史里存下来的原始行 + 当时用的模板 */
+export interface ReprintRequest {
+  raw: string;
+  templateId: string;
+}
+
 /**
  * 载入模板作为当前编辑对象。
  *
@@ -90,6 +96,8 @@ function rememberTemplate(id: string): void {
 export function App(): JSX.Element {
   const [mode, setMode] = useState<Mode>("print");
   const [showSettings, setShowSettings] = useState(false);
+  /** 从「打印历史」点复打时带过来的一行数据，交给打标签页填充 */
+  const [prefill, setPrefill] = useState<ReprintRequest | null>(null);
 
   return (
     <div className="app">
@@ -104,18 +112,18 @@ export function App(): JSX.Element {
             打标签
           </button>
           <button
-            className={mode === "design" ? "active" : ""}
-            onClick={() => setMode("design")}
-            title="管理员：设计布局、定义变量与字段映射"
-          >
-            设计模板
-          </button>
-          <button
             className={mode === "history" ? "active" : ""}
             onClick={() => setMode("history")}
             title="查看已打印的记录，按序列号查证是否打过"
           >
             打印历史
+          </button>
+          <button
+            className={mode === "design" ? "active" : ""}
+            onClick={() => setMode("design")}
+            title="管理员：设计布局、定义变量与字段映射"
+          >
+            设计模板
           </button>
         </div>
         <button
@@ -146,12 +154,21 @@ export function App(): JSX.Element {
       </nav>
 
       {mode === "print" ? (
-        <PrintWorkspace onOpenDesigner={() => setMode("design")} />
+        <PrintWorkspace
+          onOpenDesigner={() => setMode("design")}
+          prefill={prefill}
+          onPrefillConsumed={() => setPrefill(null)}
+        />
       ) : mode === "design" ? (
         <DesignWorkspace />
       ) : (
         <main className="history-main-wrap">
-          <HistoryPanel />
+          <HistoryPanel
+            onReprint={(record) => {
+              setPrefill({ raw: record.raw, templateId: record.templateId });
+              setMode("print");
+            }}
+          />
         </main>
       )}
 
@@ -164,10 +181,22 @@ export function App(): JSX.Element {
 // 打标签
 // ---------------------------------------------------------------------------
 
-function PrintWorkspace({ onOpenDesigner }: { onOpenDesigner: () => void }): JSX.Element {
+function PrintWorkspace({
+  onOpenDesigner,
+  prefill,
+  onPrefillConsumed,
+}: {
+  onOpenDesigner: () => void;
+  prefill: ReprintRequest | null;
+  onPrefillConsumed: () => void;
+}): JSX.Element {
   return (
     <main className="fill-main">
-      <FillPrintPanel onOpenDesigner={onOpenDesigner} />
+      <FillPrintPanel
+        onOpenDesigner={onOpenDesigner}
+        prefill={prefill}
+        onPrefillConsumed={onPrefillConsumed}
+      />
     </main>
   );
 }

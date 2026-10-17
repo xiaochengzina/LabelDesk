@@ -43,10 +43,20 @@ pub struct PrintRecord {
     pub summary: String,
     /// 模板名
     pub template: String,
+    /// 模板 id（复打时用它切回同一个模板）
+    #[serde(default)]
+    pub template_id: String,
     /// 打印机名
     pub printer: String,
     /// 是否来自速打小窗
     pub quick: bool,
+    /// 当时粘贴的原始文本（复打时原样填回输入框）
+    ///
+    /// 没有存「解析后的变量值」而是存原文，是因为复打要走和首次完全相同的
+    /// 解析路径 —— 万一模板的字段映射后来改过，用原文才能暴露出差异，
+    /// 而不是塞进一堆旧值让人看不出问题。
+    #[serde(default)]
+    pub raw: String,
 }
 
 /// 判重结果
@@ -235,7 +245,9 @@ mod tests {
             serial: serial.to_string(),
             summary: "ThinkPad X1".into(),
             template: "笔记本标签".into(),
+            template_id: "笔记本标签".into(),
             printer: "Deli".into(),
+            raw: String::new(),
             quick: false,
         }
     }
@@ -476,6 +488,32 @@ mod tests {
         let order: Vec<&str> = r.iter().map(|x| x.serial.as_str()).collect();
         assert_eq!(order, vec!["NEWEST", "MIDDLE", "OLDEST"], "应按时间倒序");
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 老记录没有 raw / templateId 字段，必须还能读出来（复打对这些记录不可用）
+    #[test]
+    fn accepts_legacy_record_without_raw() {
+        let raw = r#"{"atMs":1700000000000,"serial":"OLD1","summary":"M","template":"T","printer":"P","quick":false}"#;
+        let parsed: PrintRecord = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.serial, "OLD1");
+        assert!(parsed.raw.is_empty(), "缺失字段应默认为空，而不是解析失败");
+        assert!(parsed.template_id.is_empty());
+    }
+
+    /// 新记录的 raw 与 templateId 必须能原样往返
+    #[test]
+    fn raw_text_survives_roundtrip() {
+        let dir = temp_dir("raw");
+        let mut r = rec("PF2ABCDE", now_ms());
+        r.raw = "ThinkPad X1\t2024-03-15\ti7 / 16G\t3280\t张伟\tPF2ABCDE".into();
+        r.template_id = "笔记本标签".into();
+        append(&dir, &r).unwrap();
+
+        let all = read_all(&dir);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].raw, r.raw, "复打依赖 raw 原样保存");
+        assert_eq!(all[0].template_id, "笔记本标签");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

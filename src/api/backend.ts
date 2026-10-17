@@ -189,8 +189,12 @@ export interface PrintRecord {
   serial: string;
   summary: string;
   template: string;
+  /** 模板 id，复打时用它切回同一个模板 */
+  templateId: string;
   printer: string;
   quick: boolean;
+  /** 当时粘贴的原始文本；老记录为空，此时不能复打 */
+  raw: string;
 }
 
 /** 判重命中 */
@@ -212,15 +216,20 @@ export function printHistoryAppend(args: {
   serial: string;
   summary: string;
   template: string;
+  templateId: string;
   printer: string;
   quick: boolean;
+  /** 本次粘贴的原始文本，供日后复打 */
+  raw: string;
 }): Promise<void> {
   return call<void>("print_history_append", {
     serial: args.serial,
     summary: args.summary,
     template: args.template,
+    templateId: args.templateId,
     printer: args.printer,
     quick: args.quick,
+    raw: args.raw,
   });
 }
 

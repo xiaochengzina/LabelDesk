@@ -175,8 +175,10 @@ export function QuickPanel(): JSX.Element {
           serial: candidates[0] ?? "",
           summary: summarizeForHistory(fill),
           template: layout.name || layout.id,
+          templateId: layout.id,
           printer: printer.name,
           quick: true,
+          raw: pasteText,
         }).catch(() => undefined);
       }
       // 清空并把焦点还回来，便于连续作业
@@ -187,7 +189,7 @@ export function QuickPanel(): JSX.Element {
     } finally {
       setBusy(false);
     }
-  }, [layout, printer, fill, profile]);
+  }, [layout, printer, fill, profile, pasteText]);
 
   /** 先查重；有重复就展示提醒并停下 */
   const requestPrint = useCallback(async () => {

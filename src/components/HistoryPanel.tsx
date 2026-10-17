@@ -20,7 +20,12 @@ import { Icon } from "./Icon";
 /** 一次最多取多少条：足够覆盖日常回查，又不至于把 DOM 撑爆 */
 const PAGE_SIZE = 500;
 
-export function HistoryPanel(): JSX.Element {
+interface Props {
+  /** 点「复打」：把这一行的原始数据带回打标签页，由用户自己按打印 */
+  onReprint: (record: PrintRecord) => void;
+}
+
+export function HistoryPanel({ onReprint }: Props): JSX.Element {
   const [records, setRecords] = useState<PrintRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -170,6 +175,7 @@ export function HistoryPanel(): JSX.Element {
                 <th className="col-template">模板</th>
                 <th className="col-printer">打印机</th>
                 <th className="col-src">来源</th>
+                <th className="col-action" />
               </tr>
             </thead>
             <tbody>
@@ -191,6 +197,21 @@ export function HistoryPanel(): JSX.Element {
                   </td>
                   <td className="col-src">
                     {r.quick ? <span className="tag">小窗</span> : <span className="tag dim">主窗口</span>}
+                  </td>
+                  <td className="col-action">
+                    <button
+                      className="ghost compact reprint-button"
+                      disabled={!r.raw}
+                      title={
+                        r.raw
+                          ? "把这一行填回输入框，由你自己确认后打印"
+                          : "这条记录来自旧版本，没有保存原始行，无法复打"
+                      }
+                      onClick={() => onReprint(r)}
+                    >
+                      <Icon name="redo-2" size={13} />
+                      复打
+                    </button>
                   </td>
                 </tr>
               ))}

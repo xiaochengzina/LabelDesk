@@ -423,12 +423,15 @@ fn print_history_check(
 
 /// 打印成功后记一条。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn print_history_append(
     serial: String,
     summary: String,
     template: String,
+    template_id: String,
     printer: String,
     quick: bool,
+    raw: String,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let dir = state
@@ -444,8 +447,10 @@ fn print_history_append(
         serial,
         summary,
         template,
+        template_id,
         printer,
         quick,
+        raw,
     };
     printlog::append(&dir, &record)
 }

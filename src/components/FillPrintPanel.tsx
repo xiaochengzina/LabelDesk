@@ -43,9 +43,12 @@ const PREVIEW_DPI = 203;
 interface Props {
   /** 切到设计器（模板没配好时引导管理员过去） */
   onOpenDesigner: () => void;
+  /** 从「打印历史」点复打带过来的一行数据；填充后回调清空，避免重复触发 */
+  prefill?: { raw: string; templateId: string } | null;
+  onPrefillConsumed?: () => void;
 }
 
-export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
+export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: Props): JSX.Element {
   const [templates, setTemplates] = useState<LayoutSummary[]>([]);
   const [layout, setLayout] = useState<LabelLayout | null>(null);
   const [printer, setPrinter] = useState<PrinterInfo | null>(null);
@@ -136,6 +139,39 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
     },
     [printers, layout],
   );
+
+  // 从「打印历史」点复打带过来的一行：切到当时的模板，把原文填回输入框。
+  // 只填充、不打印 —— 由用户自己核对后按打印，避免误按历史就出纸。
+  useEffect(() => {
+    if (!prefill) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (prefill.templateId && prefill.templateId !== layout?.id) {
+          const doc = await readLayout(prefill.templateId);
+          if (cancelled) return;
+          setLayout(doc);
+          writeConfig({ lastTemplateId: doc.id, lastPrinterName: printer?.name ?? "" }).catch(
+            () => undefined,
+          );
+        }
+      } catch {
+        // 模板可能已被删除：仍然把原文填进去，让用户看到解析结果
+      }
+      if (cancelled) return;
+      setPasteText(prefill.raw);
+      setOverrides({});
+      setLastResult(null);
+      setError(null);
+      requestAnimationFrame(() => pasteRef.current?.focus());
+      onPrefillConsumed?.();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // 只在 prefill 变化时触发；layout/printer 仅用于比较与记录，不作为触发条件
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   // ---------------------------------------------------------------- 解析
   const fill: FillResult | null = useMemo(
@@ -242,8 +278,10 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
           serial: candidates[0] ?? "",
           summary: summarizeForHistory(fill),
           template: layout.name || layout.id,
+          templateId: layout.id,
           printer: printer.name,
           quick: false,
+          raw: pasteText,
         }).catch(() => undefined);
       }
 
@@ -256,7 +294,7 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
     } finally {
       setBusy(false);
     }
-  }, [layout, printer, effectiveVariables, profile, fill]);
+  }, [layout, printer, effectiveVariables, profile, fill, pasteText]);
 
   /** 先查重，无重复（或用户已确认）才真正打印 */
   const requestPrint = useCallback(async () => {

@@ -2101,3 +2101,24 @@ body.quick-window {
     width: 100px;
   }
 }
+
+/* 历史行里的「复打」：常驻但低调，hover 才明显 */
+.history-table .col-action {
+  width: 82px;
+  text-align: right;
+}
+
+.reprint-button {
+  padding: 2px 8px;
+  font-size: 11px;
+  opacity: 0.72;
+  white-space: nowrap;
+}
+
+.history-table tbody tr:hover .reprint-button:not(:disabled) {
+  opacity: 1;
+}
+
+.reprint-button:disabled {
+  opacity: 0.32;
+}
