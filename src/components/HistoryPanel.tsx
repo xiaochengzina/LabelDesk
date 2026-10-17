@@ -6,7 +6,7 @@
  * 与「打标签」「设计模板」并列。
  */
 
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
   printHistoryClear,
   printHistoryCount,
@@ -35,7 +35,15 @@ export function HistoryPanel({ onReprint }: Props): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
+  /**
+   * 请求序号：只有「最后一次发出的请求」才能落地。
+   * 防抖只能保证一次输入发一个请求，挡不住「后发先至」——
+   * 历史文件大时旧请求可能后返回，把新结果盖掉。
+   */
+  const requestSeq = useRef(0);
+
   const load = useCallback(async (q: string) => {
+    const seq = ++requestSeq.current;
     setLoading(true);
     setError(null);
     try {
@@ -44,33 +52,23 @@ export function HistoryPanel({ onReprint }: Props): JSX.Element {
         printHistoryCount(),
         printHistoryTemplates(),
       ]);
+      if (seq !== requestSeq.current) return; // 已有更新的请求，丢弃本次结果
       setRecords(list);
       setTotal(count);
       setTemplates(tpl);
     } catch (e) {
+      if (seq !== requestSeq.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   }, []);
 
-  // 首次载入
+  // 首屏与搜索统一走这一个防抖 effect（原来首屏还会额外发一次重复请求）
   useEffect(() => {
-    void load("");
-  }, [load]);
-
-  // 搜索防抖：每敲一个字都读历史文件没必要
-  useEffect(() => {
-    const q = query.trim();
-    if (!q && records.length === 0 && !loading) {
-      void load("");
-      return;
-    }
-    const timer = window.setTimeout(() => void load(q), 250);
+    const timer = window.setTimeout(() => void load(query.trim()), 250);
     return () => window.clearTimeout(timer);
-    // 只在输入变化时触发；records/loading 仅用于首次空搜索的兜底
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, load]);
 
   const shown = useMemo(
     () => (templateFilter ? records.filter((r) => r.template === templateFilter) : records),

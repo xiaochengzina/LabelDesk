@@ -139,7 +139,7 @@ try {
 } catch {}
 try {
   $list = @(Get-CimInstance -ClassName Win32_Printer -ErrorAction Stop | Select-Object Name,DriverName,PortName,Default,WorkOffline,PrinterStatus,Local,Network)
-  if ($list.Count -eq 0) { Write-Output '[]' } else { Write-Output ($list | ConvertTo-Json -Depth 4 -Compress) }
+  if ($list.Count -eq 0) { Write-Output '[]' } else { Write-Output (ConvertTo-Json -InputObject $list -Depth 4 -Compress) }
 } catch {
   Write-Output ('{"error":' + (ConvertTo-Json -InputObject $_.Exception.Message -Compress) + '}')
 }
@@ -162,9 +162,26 @@ try {
             return Err(format!("查询打印机失败: {err}"));
         }
     }
-    let raw: Vec<RawPrinter> = serde_json::from_str(&json)
-        .map_err(|e| format!("解析打印机列表失败: {e}；原始输出: {}", truncate(&json, 300)))?;
+    // PowerShell 在只有 1 台打印机时会输出 JSON 对象而不是数组
+    // （管道把单个元素拆包了），所以这里两种形态都要接。
+    let raw: Vec<RawPrinter> = match serde_json::from_str::<Vec<RawPrinter>>(&json) {
+        Ok(list) => list,
+        Err(e) => match serde_json::from_str::<RawPrinter>(&json) {
+            Ok(single) => vec![single],
+            Err(_) => {
+                return Err(format!(
+                    "解析打印机列表失败: {e}；原始输出: {}",
+                    truncate(&json, 300)
+                ))
+            }
+        },
+    };
 
+    Ok(to_infos(raw))
+}
+
+/// 把 WMI 原始结构转成前端用的描述，并按「最可能是标签机」排序。
+fn to_infos(raw: Vec<RawPrinter>) -> Vec<PrinterInfo> {
     let mut out: Vec<PrinterInfo> = raw
         .into_iter()
         .map(|p| {
@@ -200,7 +217,7 @@ try {
             .then(b.looks_like_label_printer.cmp(&a.looks_like_label_printer))
             .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    Ok(out)
+    out
 }
 
 fn truncate(s: &str, n: usize) -> String {
@@ -356,4 +373,37 @@ mod tests {
         assert_eq!(status_text(Some(3)), "空闲");
         assert_eq!(status_text(None), "未知");
     }
+
+const ONE: &str = r#"{"Name":"Deli","DriverName":"Deli DL-888D(NEW)","PortName":"USB001","Default":true,"WorkOffline":false,"PrinterStatus":3,"Local":true,"Network":false}"#;
+
+    /// 只有 1 台打印机时，PowerShell 会输出 JSON 对象而不是数组。
+    /// 两种形态都必须能接，否则单打印机电脑上整个打印功能不可用。
+    #[test]
+    fn parses_single_object_shape() {
+        let raw: RawPrinter = serde_json::from_str(ONE).expect("单个对象应能解析");
+        assert_eq!(raw.name, "Deli");
+        assert!(raw.default);
+
+        let infos = to_infos(vec![raw]);
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].name, "Deli");
+        // 驱动名命中标签机特征 → 建议走原始指令
+        assert!(infos[0].looks_like_label_printer);
+        assert_eq!(infos[0].suggested_channel, PrintChannel::Raw);
+    }
+
+    #[test]
+    fn parses_array_shape() {
+        let json = format!("[{ONE},{ONE}]");
+        let raw: Vec<RawPrinter> = serde_json::from_str(&json).expect("数组应能解析");
+        assert_eq!(to_infos(raw).len(), 2);
+    }
+
+    #[test]
+    fn parses_empty_array() {
+        let raw: Vec<RawPrinter> = serde_json::from_str("[]").unwrap();
+        assert!(to_infos(raw).is_empty());
+    }
 }
+
+

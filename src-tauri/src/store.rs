@@ -224,7 +224,24 @@ pub fn read_config(root: &Path) -> serde_json::Value {
 }
 
 /// 写入应用配置（原子写，避免中途崩溃留下半个文件）。
-pub fn write_config(root: &Path, value: &serde_json::Value) -> Result<(), String> {
+///
+/// **按顶层键合并**，不是整体覆盖。原因：前端各处只发它改动的键
+/// （`{lastTemplateId, lastPrinterName}`），而 `autostartDecided`、
+/// `quickMode` 是后端自己读写的键 —— 整体覆盖会把它们从磁盘上抹掉，
+/// 导致「设置里关掉开机启动，切一次模板又自动开了」「小窗形态记不住」。
+/// 后端自己的写入方（persist_mode / set_autostart）本来就读-改-写，合并后同样安全。
+pub fn write_config(root: &Path, patch: &serde_json::Value) -> Result<(), String> {
+    let mut merged = read_config(root);
+    if !merged.is_object() {
+        merged = serde_json::json!({});
+    }
+    if let (Some(dst), Some(src)) = (merged.as_object_mut(), patch.as_object()) {
+        for (key, val) in src {
+            dst.insert(key.clone(), val.clone());
+        }
+    }
+    let value = &merged;
+
     let path = config_path(root);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
@@ -381,6 +398,48 @@ mod tests {
         let list = list(&root).unwrap();
         assert_eq!(list.len(), 1, "覆盖保存不应产生额外模板: {list:?}");
         assert!(read_raw(&root, "标签").unwrap().contains("新"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 写配置必须合并而不是覆盖：前端只发它改动的键，
+    /// 后端自己读写的 autostartDecided / quickMode 不能被抹掉。
+    #[test]
+    fn write_config_merges_instead_of_replacing() {
+        // config_path 取「模板目录的父级」，所以要传 layouts 子目录，
+        // 不能直接把临时根目录当模板目录 —— 否则配置会写到 %TEMP% 顶层，
+        // 多个测试互相干扰。
+        let root = temp_root("config-merge");
+        let layouts = root.join("layouts");
+        let _ = &root;
+        // 后端先写入自己的两个键
+        write_config(
+            &layouts,
+            &serde_json::json!({"autostartDecided": true, "quickMode": true}),
+        )
+        .unwrap();
+        // 前端只发它关心的两个键
+        write_config(
+            &layouts,
+            &serde_json::json!({"lastTemplateId": "笔记本标签", "lastPrinterName": "Deli"}),
+        )
+        .unwrap();
+
+        let cfg = read_config(&layouts);
+        assert_eq!(cfg["autostartDecided"], serde_json::json!(true), "开机启动标记不能被抹掉");
+        assert_eq!(cfg["quickMode"], serde_json::json!(true), "窗口形态不能被抹掉");
+        assert_eq!(cfg["lastTemplateId"], serde_json::json!("笔记本标签"));
+        assert_eq!(cfg["lastPrinterName"], serde_json::json!("Deli"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 覆盖同一个键时要生效
+    #[test]
+    fn write_config_overwrites_same_key() {
+        let root = temp_root("config-overwrite");
+        let layouts = root.join("layouts");
+        write_config(&layouts, &serde_json::json!({"lastTemplateId": "A"})).unwrap();
+        write_config(&layouts, &serde_json::json!({"lastTemplateId": "B"})).unwrap();
+        assert_eq!(read_config(&layouts)["lastTemplateId"], serde_json::json!("B"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

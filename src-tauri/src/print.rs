@@ -363,7 +363,10 @@ pub fn build_tspl(
     copies: u32,
     density: Option<u32>,
     speed: Option<u32>,
-    dark_bit_zero: bool,
+    // invert_bits：用户要求「反转位极性」（固件用 1=打印）。
+    // 位图统一按 1=黑 打包，TSPL 规范是 0=打印，所以默认要翻一次；
+    // invert_bits 为 true 表示这台固件相反，那就保持 1=打印。
+    invert_bits: bool,
 ) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::with_capacity(row_bytes.len() + 256);
     let line = |s: String, out: &mut Vec<u8>| {
@@ -403,9 +406,10 @@ pub fn build_tspl(
     }
     line("CLS".into(), &mut out);
 
+    // 位图按 1=黑 进来；TSPL 规范是 0=打印 → 默认取反。
+    // 勾了「反转位极性」的固件才是 1=打印，那就原样输出。
     let mut data = row_bytes.to_vec();
-    if !dark_bit_zero {
-        // 固件使用 1=打印 的极性，逐字节取反
+    if !invert_bits {
         for b in data.iter_mut() {
             *b = !*b;
         }
@@ -419,44 +423,56 @@ pub fn build_tspl(
 }
 
 /// 生成 ESC/POS 光栅位图作业。GS v 0 单行宽度上限 255 字节，超出则分块。
+///
+/// 位极性：调用方按「1=黑」打包（与位图直觉一致），而 GS v 0 本身就是
+/// 「1=打印」，所以默认不翻转；只有用户显式要求反转时才翻。
 pub fn build_escpos(
     row_bytes: &[u8],
     w_bytes: u32,
     height: u32,
     copies: u32,
     density: Option<u32>,
+    invert_bits: bool,
 ) -> Vec<u8> {
-    let mut out: Vec<u8> = Vec::new();
-    out.extend_from_slice(&[0x1B, 0x40]); // ESC @ 初始化
+    let mut data = row_bytes.to_vec();
+    if invert_bits {
+        for b in data.iter_mut() {
+            *b = !*b;
+        }
+    }
 
     let max_chunk = 255u32;
-    let mut x_offset = 0u32;
-    while x_offset < w_bytes {
-        let chunk = (w_bytes - x_offset).min(max_chunk);
-        let chunk_bytes = (chunk as usize) * height as usize;
-        out.extend_from_slice(&[0x1B, 0x33, if density.unwrap_or(0) > 0 { 24 } else { 0 }]); // ESC 3 n 行距
-        out.extend_from_slice(&[0x1D, 0x76, 0x30, 0x00]);
-        out.extend_from_slice(&[(chunk & 0xFF) as u8, ((chunk >> 8) & 0xFF) as u8]);
-        out.extend_from_slice(&[(height & 0xFF) as u8, ((height >> 8) & 0xFF) as u8]);
+    // 份数：每份都要重发「初始化 + 整张位图」。
+    // 原来只在份数循环里补 ESC @ 和换行，位图没重发 → 填 3 份也只出一张。
+    let mut out: Vec<u8> = Vec::new();
+    for _ in 0..copies.max(1) {
+        out.extend_from_slice(&[0x1B, 0x40]); // ESC @ 初始化
 
-        // 按列块重组：GS v 0 是「按行连续」的，因此逐行取该列块
-        for y in 0..height as usize {
-            let row = &row_bytes[y * w_bytes as usize..(y + 1) * w_bytes as usize];
-            out.extend_from_slice(&row[x_offset as usize..(x_offset + chunk) as usize]);
+        let mut x_offset = 0u32;
+        while x_offset < w_bytes {
+            let chunk = (w_bytes - x_offset).min(max_chunk);
+            out.extend_from_slice(&[0x1B, 0x33, if density.unwrap_or(0) > 0 { 24 } else { 0 }]);
+            out.extend_from_slice(&[0x1D, 0x76, 0x30, 0x00]);
+            out.extend_from_slice(&[(chunk & 0xFF) as u8, ((chunk >> 8) & 0xFF) as u8]);
+            out.extend_from_slice(&[(height & 0xFF) as u8, ((height >> 8) & 0xFF) as u8]);
+
+            // 按列块重组：GS v 0 是「按行连续」的，因此逐行取该列块
+            for y in 0..height as usize {
+                let row = &data[y * w_bytes as usize..(y + 1) * w_bytes as usize];
+                out.extend_from_slice(&row[x_offset as usize..(x_offset + chunk) as usize]);
+            }
+            out.extend_from_slice(b"\n");
+            x_offset += chunk;
         }
-        let _ = chunk_bytes;
-        out.extend_from_slice(b"\n");
-        x_offset += chunk;
-    }
-    out.extend_from_slice(&[0x1D, 0x56, 0x00]); // GS V 0 全切（无切刀机型会忽略）
-    for _ in 1..copies.max(1) {
-        out.extend_from_slice(&[0x1B, 0x40]);
-        out.extend_from_slice(&[0x0A]);
+        out.extend_from_slice(&[0x1D, 0x56, 0x00]); // GS V 0 全切（无切刀机型会忽略）
     }
     out
 }
 
 /// 生成 ZPL 作业（需先把位图转成 ASCII 十六进制）。
+///
+/// `dpi` 必须传进来：`^LL`（标签长度）按「每毫米多少点」换算，
+/// 写死 8 点/mm 时 300/600 dpi 机器上走纸长度会变成 1/2、1/3，内容被截断。
 pub fn build_zpl(
     row_bytes: &[u8],
     w_bytes: u32,
@@ -465,26 +481,35 @@ pub fn build_zpl(
     height_mm: f64,
     copies: u32,
     density: Option<u32>,
+    dpi: f64,
+    invert_bits: bool,
 ) -> Vec<u8> {
-    let dpm = 8u32; // 203dpi ≈ 8 dots/mm
-    let mut hex = String::with_capacity(row_bytes.len() * 2);
-    for b in row_bytes {
+    let mut data = row_bytes.to_vec();
+    // 位图按 1=黑 进来，^GFA 也是 1=打印 → 默认不翻
+    if invert_bits {
+        for b in data.iter_mut() {
+            *b = !*b;
+        }
+    }
+    let mut hex = String::with_capacity(data.len() * 2);
+    for b in &data {
         hex.push_str(&format!("{:02X}", b));
     }
-    let total = height * w_bytes;
+    let dpm = (if dpi > 1.0 { dpi } else { 203.0 }) / 25.4; // 点/毫米
+    let dots_w = (width_mm * dpm).round().max(1.0) as u32;
+    let total = height.saturating_mul(w_bytes);
     let mut s = String::new();
     s.push_str("^XA\r\n");
     s.push_str("^CI28\r\n");
     if let Some(d) = density {
         s.push_str(&format!("^MD{}\r\n", d.min(30)));
     }
-    s.push_str(&format!("^PW{}\r\n", w_bytes * 8));
-    s.push_str(&format!("^LL{}\r\n", (height_mm * dpm as f64).round() as u32));
+    s.push_str(&format!("^PW{}\r\n", dots_w));
+    s.push_str(&format!("^LL{}\r\n", (height_mm * dpm).round().max(1.0) as u32));
     s.push_str("^FO0,0\r\n");
     s.push_str(&format!("^GFA,{},{},{},{}\r\n", total, total, w_bytes, hex));
     s.push_str(&format!("^PQ{}\r\n", copies.max(1)));
     s.push_str("^XZ\r\n");
-    let _ = (width_mm, height_mm);
     s.into_bytes()
 }
 
@@ -503,8 +528,8 @@ pub fn run_print(spec: &PrintSpec, driver_script: &std::path::Path) -> Result<Pr
         &mono,
         raw_frame.width,
         raw_frame.height,
-        // TSPL 规范为 0=打印；若用户勾选反转则用 1=打印
-        !spec.invert_bits,
+        // 统一按「1 = 黑」打包（各语言自己在生成时按规范转换极性）
+        false,
     );
 
     let preview_png = encode_gray_png(&mono, raw_frame.width, raw_frame.height).ok();
@@ -534,7 +559,14 @@ pub fn run_print(spec: &PrintSpec, driver_script: &std::path::Path) -> Result<Pr
                     !spec.invert_bits,
                 ),
                 LanguageKind::Escpos => {
-                    build_escpos(&row_bytes, w_bytes, raw_frame.height, copies, spec.density)
+                    build_escpos(
+                        &row_bytes,
+                        w_bytes,
+                        raw_frame.height,
+                        copies,
+                        spec.density,
+                        spec.invert_bits,
+                    )
                 }
                 LanguageKind::Zpl => build_zpl(
                     &row_bytes,
@@ -544,6 +576,8 @@ pub fn run_print(spec: &PrintSpec, driver_script: &std::path::Path) -> Result<Pr
                     spec.height_mm,
                     copies,
                     spec.density,
+                    spec.dpi,
+                    spec.invert_bits,
                 ),
             };
             let sent = raw_print(&spec.printer_name, &spec.job_name, &stream)?;
@@ -650,7 +684,7 @@ mod tests {
     #[test]
     fn tspl_uses_bline_for_black_mark_paper() {
         // 黑标纸必须用 BLINE；用 GAP 会导致连续走纸
-        let out = build_tspl(&[0u8], 1, 1, 40.0, 30.0, 3.0, 1.0, "bline", 1, None, None, true);
+        let out = build_tspl(&[0u8], 1, 1, 40.0, 30.0, 3.0, 1.0, "bline", 1, None, None, false);
         let text = String::from_utf8_lossy(&out);
         assert!(text.contains("BLINE 3.00 mm,1.00 mm\r\n"), "缺少 BLINE 指令");
         assert!(!text.contains("GAP"), "黑标纸不应出现 GAP 指令");
@@ -658,7 +692,7 @@ mod tests {
 
     #[test]
     fn tspl_continuous_paper_uses_zero_gap() {
-        let out = build_tspl(&[0u8], 1, 1, 40.0, 30.0, 2.0, 0.0, "continuous", 1, None, None, true);
+        let out = build_tspl(&[0u8], 1, 1, 40.0, 30.0, 2.0, 0.0, "continuous", 1, None, None, false);
         let text = String::from_utf8_lossy(&out);
         assert!(text.contains("GAP 0.00 mm,0.00 mm\r\n"), "连续纸应使用零间隙");
     }
@@ -675,7 +709,7 @@ mod tests {
     #[test]
     fn escpos_has_raster_header() {
         let rows = vec![0xFFu8, 0x00, 0xFF];
-        let out = build_escpos(&rows, 1, 3, 1, None);
+        let out = build_escpos(&rows, 1, 3, 1, None, false);
         assert_eq!(&out[..2], &[0x1B, 0x40]);
         let pos = out.windows(4).position(|w| w == [0x1D, 0x76, 0x30, 0x00]);
         assert!(pos.is_some(), "ESC/POS 输出必须包含 GS v 0 光栅头");
@@ -684,7 +718,7 @@ mod tests {
     #[test]
     fn zpl_has_graphic_field() {
         let rows = vec![0xAAu8];
-        let out = build_zpl(&rows, 1, 1, 40.0, 30.0, 2, None);
+        let out = build_zpl(&rows, 1, 1, 40.0, 30.0, 2, None, 203.0, false);
         let s = String::from_utf8_lossy(&out);
         assert!(s.starts_with("^XA"));
         assert!(s.contains("^GFA,1,1,1,AA"));
@@ -764,11 +798,33 @@ mod tests {
         let w_bytes = 300u32;
         let height = 2u32;
         let rows = vec![0u8; (w_bytes * height) as usize];
-        let out = build_escpos(&rows, w_bytes, height, 1, None);
+        let out = build_escpos(&rows, w_bytes, height, 1, None, false);
         let headers = out
             .windows(4)
             .filter(|w| *w == [0x1D, 0x76, 0x30, 0x00])
             .count();
         assert_eq!(headers, 2, "宽位图应切成 2 个光栅块");
+    }
+
+    /// 端到端极性：像素（二值 → 打包 → TSPL 指令流）落盘时必须是「0=黑」。
+    /// 之前只有 build_tspl 的单测，绕过了 run_print 的打包步骤 ——
+    /// 结果两处各自取反互相抵消，勾「反转位极性」完全无效。
+    #[test]
+    fn tspl_polarity_end_to_end_from_bitmap() {
+        // 一行两像素：左黑右白
+        let mono = [true, false];
+        let (rows, w_bytes) = mono_to_row_bytes(&mono, 2, 1, false); // 1 = 黑
+
+        // 位序是 MSB-first：像素 0 → bit7。黑点在「1=黑」打包后是 0b1000_0000。
+        assert_eq!(rows[0], 0b1000_0000, "打包应按 1=黑 且 MSB 在前");
+
+        let normal = build_tspl(&rows, w_bytes, 1, 10.0, 10.0, 0.0, 0.0, "gap", 1, None, None, false);
+        // TSPL 规范 0=打印 → 黑点那一位要变成 0，其余补白位变 1（不打）
+        assert!(normal.contains(&0b0111_1111), "默认应把黑像素写成 0");
+        assert!(!normal.contains(&0b1000_0000), "不该原样输出 1=黑");
+
+        let inverted = build_tspl(&rows, w_bytes, 1, 10.0, 10.0, 0.0, 0.0, "gap", 1, None, None, true);
+        // 勾了反转（固件 1=打印）：保持 1=黑
+        assert!(inverted.contains(&0b1000_0000), "反转后应保持黑像素为 1");
     }
 }

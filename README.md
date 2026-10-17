@@ -765,6 +765,7 @@ cargo run --example print_image -- <png> <wPx> <hPx> <wMm> <hMm> [打印机]  # 
 | `npm run verify:fill` | 粘贴解析与字段映射（表格整行 / CSV / 逐单元格 / 列数不符） |
 | `npm run verify:dpi` | 同一模板在 203/300/600 dpi 下物理尺寸一致性 |
 | `npm run verify:history` | 序列号识别与去重（重点验证型号/配置/日期不被误判） |
+| `npm run verify:qrmatrix` | 二维码矩阵与 node-qrcode **逐格比对**（128 例全一致） |
 | `npm run verify:render` | 端到端：真实渲染器生成标签 PNG（加 `--print` 可真机打印） |
 | `node --import ./scripts/loader-register.mjs scripts/verify-testdata.mjs` | 让 `testdata/` 里每条测试数据都过一遍真实解析器与渲染器 |
 | `node scripts/selfcheck-qr.mjs` | 按规范读回 QR 数据位流，不依赖第三方实现 |
@@ -804,7 +805,7 @@ Rust 侧打印相关的单元测试覆盖：
 
 | 限制 | 说明 |
 | --- | --- |
-| **QR 版本 > 6 不可用** | 版本 7 及以上的数据区编码有 bug。定位过程：功能图案、版本信息、校正图案、码字流、RS 纠错都已用独立参考实现逐字节核对**一致**，问题收窄到「矩阵位放置」，但未找到根因。当前按纠错等级收敛容量并给出告警。 |
+| **QR 版本 > 6 不可用** | 版本 7 及以上仍不可用。v1–v6 的矩阵放置与格式信息已修好，并做到与 node-qrcode **逐格一致**（128 例）；v7+ 仍存在差异（1370 格量级），根因在更高版本的码字数/分块表，尚未定位。当前按纠错等级收敛容量并给出告警。 |
 | **L 级容量被压到 32 字节** | 纠错等级 L 从版本 3 起同样触发上述 bug，因此 L 级只开放版本 1–2。M/Q/H 三档可正常用到版本 6。 |
 | **仅在我的机型上实测** | 只在 Deli DL-888D（TSPL）上做过真机验证。ESC/POS 与 ZPL 两条通路只做了指令流结构测试，**没有真机验证过**。 |
 

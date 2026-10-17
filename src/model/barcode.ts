@@ -741,9 +741,14 @@ export function encodeQr(text: string, ecc: string = "M", options?: { forceMask?
 
   let bitIndex = 0;
   let upward = true;
-  for (let pair = size - 1; pair > 0; pair -= 2) {
-    // 第 6 列是纵向时序图案：整对左移，而不是只改当前列（否则会重复处理第 5 列）
-    const rightCol = pair === 6 ? 5 : pair;
+  // 两列一组从右往左扫。注意 pair 必须**可被跳过时整体左移**：
+  // 第 6 列是纵向时序图案，遇到它要整对落到 (5,4)，
+  // 之后继续按 5-2=3、1 递减。早先写成只把当前列改成 5、
+  // 而 pair 仍按 6→4→2 递减，会得到 (5,4)→(4,3)→(2,1)，
+  // 第 0 列永远不写、第 4 列写两遍 —— 数据错位靠纠错码硬吃。
+  for (let right = size - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    const rightCol = right;
     for (let i = 0; i < size; i++) {
       const row = upward ? size - 1 - i : i;
       for (const c of [rightCol, rightCol - 1]) {
@@ -811,14 +816,24 @@ function applyFormatInfo(matrix: boolean[][], size: number, ecc: string, mask: n
   const format = ((data << 10) | value) ^ 0x5412;
   const bit = (i: number) => ((format >> (14 - i)) & 1) === 1;
 
+  // 副本 1
   for (let i = 0; i <= 5; i++) matrix[8][i] = bit(i);
   matrix[8][7] = bit(6);
   matrix[8][8] = bit(7);
   matrix[7][8] = bit(8);
   for (let i = 9; i <= 14; i++) matrix[14 - i][8] = bit(i);
 
-  for (let i = 0; i <= 7; i++) matrix[size - 1 - i][8] = bit(i);
-  for (let i = 8; i <= 14; i++) matrix[8][size - 15 + i] = bit(i);
+  // 副本 2（与副本 1 镜像）：
+  //   位 0-6 → (size-1)..(size-7) 行的第 8 列
+  //   位 7-14 → 第 8 行的 (size-8)..(size-1) 列
+  //
+  // 早先写成「位 0-7 走列、位 8-14 走行」，导致镜像副本少写一个位置
+  // (8, size-8)，而位 7 被写进 (size-8, 8) 后又被下面的暗模块覆盖 ——
+  // 等于每位 QR 的格式信息都错 1 位。扫码器靠 BCH 纠错（可纠 3 位）
+  // 把这 1 位吞掉，所以「看起来正常」，但白占一格纠错余量。
+  for (let i = 0; i <= 6; i++) matrix[size - 1 - i][8] = bit(i);
+  for (let i = 7; i <= 14; i++) matrix[8][size - 15 + i] = bit(i);
+  // 暗模块固定在 (4*version+9, 8) = (size-8, 8)
   matrix[size - 8][8] = true;
 }
 

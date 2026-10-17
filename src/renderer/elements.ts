@@ -436,7 +436,13 @@ const barcodeDef: ElementDefinition = {
       ? w / totalUnits
       : mm(element.moduleWidthMm, rc);
 
-    let x = element.autoFit ? 0 : Math.max(0, (w - totalUnits * unitWidth) / 2) + quiet * unitWidth;
+    // 起始位置必须留出左侧静区：
+    // 自动铺满时 unitWidth 已按 (条空 + 两侧静区) 算过，若这里从 0 开始画，
+    // 左边静区就没了、右边却留了双倍 —— 条码贴着标签左边缘时容易扫不出，
+    // 视觉上也明显偏左。两种模式都从「左侧静区」起画。
+    let x = element.autoFit
+      ? quiet * unitWidth
+      : Math.max(0, (w - totalUnits * unitWidth) / 2) + quiet * unitWidth;
     ctx.fillStyle = "#000";
     // 用 Math.round 对齐像素边界，避免细条被抗锯齿糊掉
     const drawX = x;

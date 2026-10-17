@@ -87,14 +87,24 @@ fn now_ms() -> u128 {
 }
 
 /// 读取全部记录（损坏的行跳过）
+///
+/// 按字节读、按行切，每行独立做 UTF-8 解码（`from_utf8_lossy`）。
+/// 不能直接用 `read_to_string`：只要文件里有一个非法字节（记事本另存成
+/// ANSI/GBK、断电时追加截断在汉字中间），整个读取就失败返回空 —— 表现是
+/// 「历史页突然 0 条、判重再也不提醒」，而文件明明还在。那就违背了
+/// 「坏行只丢一条」的设计。
 pub fn read_all(data_dir: &Path) -> Vec<PrintRecord> {
     let path = history_path(data_dir);
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let Ok(bytes) = std::fs::read(&path) else {
         return Vec::new();
     };
-    text.lines()
+    // 去掉 UTF-8 BOM
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF][..]).unwrap_or(&bytes);
+    bytes
+        .split(|b| *b == b'\n')
+        .map(|line| String::from_utf8_lossy(line))
         .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<PrintRecord>(l).ok())
+        .filter_map(|l| serde_json::from_str::<PrintRecord>(&l).ok())
         .collect()
 }
 
@@ -153,8 +163,14 @@ pub fn find_recent_duplicates(data_dir: &Path, candidates: &[String]) -> Vec<Dup
         .collect();
 
     let mut hits: Vec<DuplicateHit> = Vec::new();
+    // 显式按时间倒序再扫。
+    // 不能只靠「文件是追加写的所以行序=时间序」：手动编辑过、系统时钟被调整过
+    // 时行序会乱，那样这里一 break 就会漏掉真正的重复记录（静默失效）。
+    let mut records = read_all(data_dir);
+    records.sort_by(|a, b| b.at_ms.cmp(&a.at_ms));
+
     // 从新到旧扫，同一个序列号只报最近一次
-    for rec in read_all(data_dir).iter().rev() {
+    for rec in records.iter() {
         if rec.at_ms < cutoff {
             break;
         }
@@ -514,6 +530,56 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].raw, r.raw, "复打依赖 raw 原样保存");
         assert_eq!(all[0].template_id, "笔记本标签");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 文件行序乱掉时，判重也必须能命中（原来靠行序 + break，会静默漏判）
+    #[test]
+    fn duplicate_detection_ignores_file_order() {
+        let dir = temp_dir("duporder");
+        let now = now_ms();
+        // 故意把旧记录写在最前面
+        append(&dir, &rec("OLDOLD", now - 2000_000_000)).unwrap();
+        append(&dir, &rec("DUPME", now - 3600_000)).unwrap();
+        let hits = find_recent_duplicates(&dir, &["DUPME".to_string()]);
+        assert_eq!(hits.len(), 1, "不该因为前面的旧记录就 break 掉");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 文件里混入非法 UTF-8 字节时，只能丢那一行，其余记录必须还能读出来。
+    /// （用 read_to_string 时整份历史会变成 0 条 —— 判重就静默失效了）
+    #[test]
+    fn invalid_utf8_bytes_only_drop_that_line() {
+        let dir = temp_dir("badutf8");
+        append(&dir, &rec("GOOD1", 1_000)).unwrap();
+        // 追加一行含非法字节（0xFF 不是合法 UTF-8）的垃圾
+        let path = history_path(&dir);
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        use std::io::Write as _;
+        f.write_all(&[0xFF, 0xFE, b'{', b'\n']).unwrap();
+        drop(f);
+        append(&dir, &rec("GOOD2", 2_000)).unwrap();
+
+        let all = read_all(&dir);
+        let serials: Vec<&str> = all.iter().map(|r| r.serial.as_str()).collect();
+        assert_eq!(serials, vec!["GOOD1", "GOOD2"], "非法字节只应影响那一行");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 文件开头有 UTF-8 BOM 时也要能读（记事本另存常见）
+    #[test]
+    fn leading_bom_is_ignored() {
+        let dir = temp_dir("bom");
+        let path = history_path(&dir);
+        let line = serde_json::to_string(&rec("BOMSN", 1_000)).unwrap();
+        let mut body: Vec<u8> = vec![0xEF, 0xBB, 0xBF];
+        body.extend_from_slice(line.as_bytes());
+        body.push(b'\n');
+        std::fs::write(&path, body).unwrap();
+
+        let all = read_all(&dir);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].serial, "BOMSN");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

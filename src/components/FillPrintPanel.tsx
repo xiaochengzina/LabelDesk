@@ -61,9 +61,16 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
   const [lastResult, setLastResult] = useState<string | null>(null);
   const dup = useDuplicateGuard();
   const pasteRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 已应用过的复打内容，避免同一行被重复填充 */
+  const appliedPrefill = useRef<string | null>(null);
+  /** 区分「挂载首轮」与后续变化 */
+  const firstRun = useRef(true);
+  /** 打印重入锁：从点击到真正出纸之间不允许再次触发（否则连点会打两张） */
+  const printingRef = useRef(false);
 
   // ---------------------------------------------------------------- 初始化
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const [list, config, chosen] = await Promise.all([
@@ -87,19 +94,45 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
         }
         setTemplates(usable);
 
-        const preferred =
-          usable.find((t) => t.id === config.lastTemplateId) ?? usable[0] ?? null;
-        if (preferred) {
-          const doc = await readLayout(preferred.id);
+        // 选模板的优先级：**复打指定的模板 > 上次用的模板 > 第一个可用模板**
+        //
+        // 复打必须排第一：初始化要先逐个读模板判断「是否配好字段映射」，
+        // 这一步比复打的 effect 慢，若在这里无脑用「上次用的模板」，
+        // 就会把复打刚设好的模板覆盖掉，导致那行数据按错误的模板解析。
+        let doc: LabelLayout | null = null;
+        const wantId = prefill?.templateId;
+        if (wantId) {
+          try {
+            doc = await readLayout(wantId);
+          } catch {
+            // 模板可能已被删除：退回下面的默认选择
+            doc = null;
+          }
+        }
+        if (!doc) {
+          const preferred =
+            usable.find((t) => t.id === config.lastTemplateId) ?? usable[0] ?? null;
+          if (preferred) {
+            doc = await readLayout(preferred.id);
+          }
+        }
+        if (cancelled) return;
+        if (doc) {
           setLayout(doc);
-          // 启动即落盘，保证下次启动（含设计模式）直接打开同一张模板。
-          // 只在没有记录时写，避免每次启动都无谓地写文件。
-          if (config.lastTemplateId !== preferred.id) {
+          // 落盘记住，保证下次启动直接打开同一张模板。
+          // 只在和记录不一致时写，避免每次启动都无谓地写文件。
+          if (config.lastTemplateId !== doc.id) {
             writeConfig({
-              lastTemplateId: preferred.id,
+              lastTemplateId: doc.id,
               lastPrinterName: chosen?.name ?? "",
             }).catch(() => undefined);
           }
+        }
+        // 复打带过来的那一行：填进去即可，不自动打印
+        if (prefill?.raw) {
+          setPasteText(prefill.raw);
+          appliedPrefill.current = prefill.raw;
+          onPrefillConsumed?.();
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -107,6 +140,11 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
         setLoadingTemplates(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+    // 只在挂载时跑一次：prefill 在挂载时刻的值就是本次要用的
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 打印机完整列表（供操作员临时切换）
@@ -140,10 +178,15 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
     [printers, layout],
   );
 
-  // 从「打印历史」点复打带过来的一行：切到当时的模板，把原文填回输入框。
-  // 只填充、不打印 —— 由用户自己核对后按打印，避免误按历史就出纸。
+  // 复打兜底：若 prefill 是在挂载之后才变化（正常流程不会发生，因为切页签
+  // 会重新挂载本组件），这里也能正确填充。挂载那一刻的 prefill 已由上面的
+  // 初始化流程处理，跳过首轮避免两边同时 setLayout 打架。
   useEffect(() => {
-    if (!prefill) return;
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    if (!prefill || appliedPrefill.current === prefill.raw) return;
     let cancelled = false;
     (async () => {
       try {
@@ -163,6 +206,7 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
       setOverrides({});
       setLastResult(null);
       setError(null);
+      appliedPrefill.current = prefill.raw;
       requestAnimationFrame(() => pasteRef.current?.focus());
       onPrefillConsumed?.();
     })();
@@ -201,7 +245,31 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
     return base;
   }, [layout, fill, overrides, pasteText]);
 
+  /**
+   * 把操作员在「解析结果」里手动改过的值合并进解析结果。
+   *
+   * 查重和历史记录必须用这一份：否则会出现「标签印对了（因为打印用的是
+   * effectiveVariables），但历史里记的还是粘贴解析出的空值 / 旧值」，
+   * 下次同序列号再打就不会提醒重复。
+   */
+  const effectiveFill: FillResult | null = useMemo(() => {
+    if (!fill) return null;
+    const values = fill.values.map((item) => {
+      const ov = overrides[item.field.variable];
+      if (ov === undefined) return item;
+      return { ...item, value: ov, missing: false };
+    });
+    const variables: Record<string, string> = {};
+    for (const item of values) {
+      if (item.field.skip || !item.field.variable) continue;
+      variables[item.field.variable] = item.value;
+    }
+    return { ...fill, values, variables };
+  }, [fill, overrides]);
+
   const canPrint = Boolean(layout && printer && fill?.ok && !busy);
+  /** 按钮/快捷键的可用状态：查重进行中也算忙，避免连点打两张 */
+  const readyToPrint = canPrint && !dup.checking;
   /** 当前预览是否只是模板示例值（提醒操作员这不是真实数据） */
   const showingSample = !pasteText.trim();
 
@@ -272,17 +340,21 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
       setStatus("已发送打印任务", "success");
 
       // 记一条历史（失败不影响本次打印结果）
-      if (fill) {
-        const candidates = serialCandidates(fill);
+      if (effectiveFill) {
+        const candidates = serialCandidates(effectiveFill);
         printHistoryAppend({
           serial: candidates[0] ?? "",
-          summary: summarizeForHistory(fill),
+          summary: summarizeForHistory(effectiveFill),
           template: layout.name || layout.id,
           templateId: layout.id,
           printer: printer.name,
           quick: false,
           raw: pasteText,
-        }).catch(() => undefined);
+        }).catch(() => {
+          // 历史没记上会让判重失效（标签已经打出来了，所以不算打印失败），
+          // 必须让用户知道，否则「下次会提醒重复」这个承诺就悄悄失效了。
+          setStatus("已打印，但本次未记录历史（判重会失效）", "error");
+        });
       }
 
       // 清空以便立刻贴下一台；同时把焦点还给粘贴框
@@ -294,27 +366,50 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
     } finally {
       setBusy(false);
     }
-  }, [layout, printer, effectiveVariables, profile, fill, pasteText]);
+  }, [layout, printer, effectiveVariables, profile, effectiveFill, pasteText]);
 
-  /** 先查重，无重复（或用户已确认）才真正打印 */
+  /**
+   * 先查重，无重复（或用户已确认）才真正打印。
+   *
+   * 用 ref 做重入锁：查重是个 await，期间按钮仍可点，
+   * 连点两下就会真的出两张纸（「忙碌」标志在 doPrint 里才置位，来不及）。
+   */
   const requestPrint = useCallback(async () => {
-    if (!fill) return;
-    const ok = await dup.guard(serialCandidates(fill));
-    if (!ok) return; // 已拦下并展示提醒
-    await doPrint();
-  }, [fill, dup, doPrint]);
+    if (!effectiveFill || printingRef.current) return;
+    printingRef.current = true;
+    try {
+      const ok = await dup.guard(serialCandidates(effectiveFill));
+      if (!ok) return; // 已拦下并展示提醒，等用户决定
+      await doPrint();
+    } finally {
+      printingRef.current = false;
+    }
+  }, [effectiveFill, dup, doPrint]);
 
   /** 用户点「仍要打印」：跳过本次提醒 */
   const printAnyway = useCallback(async () => {
+    if (printingRef.current) return;
+    printingRef.current = true;
     dup.dismiss();
-    await doPrint();
+    try {
+      await doPrint();
+    } finally {
+      printingRef.current = false;
+    }
   }, [dup, doPrint]);
+
+  // 输入或模板一旦变化，上一条重复提醒就过期了 —— 否则会拿旧序列号的提醒
+  // 去确认新粘贴的数据，点「仍要打印」等于绕过查重。
+  useEffect(() => {
+    dup.dismiss();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasteText, layout?.id]);
   // 粘贴后自动聚焦，并支持 Ctrl+Enter 直接打印
   const onPasteKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
-        if (canPrint) void requestPrint();
+        if (readyToPrint) void requestPrint();
       }
     },
     [canPrint, doPrint],
@@ -518,10 +613,10 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
           </div>
         ) : null}
 
-        <button className="print-big" onClick={() => void requestPrint()} disabled={!canPrint}>
+        <button className="print-big" onClick={() => void requestPrint()} disabled={!readyToPrint}>
           {busy ? "正在发送…" : dup.checking ? "正在查重…" : "打印这张标签"}
         </button>
-        {!canPrint && !busy ? (
+        {!readyToPrint && !busy ? (
           <div className="print-reason">
             {!printer ? "未选择打印机" : !fill?.ok ? "请先粘贴一行数据" : ""}
           </div>

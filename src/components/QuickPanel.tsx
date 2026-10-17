@@ -45,6 +45,8 @@ export function QuickPanel(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const dup = useDuplicateGuard();
+  /** 打印重入锁：查重是 await，期间连按 Enter 会打两张 */
+  const printingRef = useRef(false);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
 
   // 载入可用模板与打印机（只保留配好字段映射的模板）
@@ -119,7 +121,7 @@ export function QuickPanel(): JSX.Element {
     [layout, printer],
   );
 
-  const canPrint = Boolean(layout && printer && fill?.ok && !busy);
+  const canPrint = Boolean(layout && printer && fill?.ok && !busy && !dup.checking);
 
   const changeTemplate = useCallback(async (id: string) => {
     try {
@@ -179,7 +181,10 @@ export function QuickPanel(): JSX.Element {
           printer: printer.name,
           quick: true,
           raw: pasteText,
-        }).catch(() => undefined);
+        }).catch(() => {
+          // 标签已经打出来了，但历史没记上 —— 判重会静默失效，得提示一句
+          setMessage({ kind: "err", text: "已打印，但历史未记录（判重会失效）" });
+        });
       }
       // 清空并把焦点还回来，便于连续作业
       setPasteText("");
@@ -191,19 +196,36 @@ export function QuickPanel(): JSX.Element {
     }
   }, [layout, printer, fill, profile, pasteText]);
 
-  /** 先查重；有重复就展示提醒并停下 */
+  /** 先查重；有重复就展示提醒并停下。用 ref 防重入，连按 Enter 不会打两张。 */
   const requestPrint = useCallback(async () => {
-    if (!fill) return;
-    const ok = await dup.guard(serialCandidates(fill));
-    if (!ok) return;
-    await doPrint();
+    if (!fill || printingRef.current) return;
+    printingRef.current = true;
+    try {
+      const ok = await dup.guard(serialCandidates(fill));
+      if (!ok) return;
+      await doPrint();
+    } finally {
+      printingRef.current = false;
+    }
   }, [fill, dup, doPrint]);
 
   /** 用户点「仍要打印」 */
   const printAnyway = useCallback(async () => {
+    if (printingRef.current) return;
+    printingRef.current = true;
     dup.dismiss();
-    await doPrint();
+    try {
+      await doPrint();
+    } finally {
+      printingRef.current = false;
+    }
   }, [dup, doPrint]);
+
+  // 换了粘贴内容或模板，旧提醒就过期了
+  useEffect(() => {
+    dup.dismiss();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasteText, layout?.id]);
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {

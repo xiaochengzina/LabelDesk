@@ -79,7 +79,7 @@ fn main() {
     println!("目标打印机：{}", target.name);
 
     let mono = rgba_to_mono(&frame.rgba, frame.width, frame.height, 160);
-    let (rows, w_bytes) = mono_to_row_bytes(&mono, frame.width, frame.height, true);
+    let (rows, w_bytes) = mono_to_row_bytes(&mono, frame.width, frame.height, false);
     let stream = build_tspl(
         &rows,
         w_bytes,

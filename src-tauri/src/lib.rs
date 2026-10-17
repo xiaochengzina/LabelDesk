@@ -102,8 +102,14 @@ fn print_label(
     spec: print::PrintSpec,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<print::PrintResult, String> {
-    let st = state.lock().map_err(|_| "内部状态锁定失败".to_string())?;
-    print::run_print(&spec, &st.printer_script)
+    // 只在取辅助脚本路径时短暂持锁：打印本身要解码位图、走 spooler 或起
+    // PowerShell，耗时可达秒级，持锁会让其它命令（读配置、写历史、切窗口）一起卡住。
+    let script = state
+        .lock()
+        .map_err(|_| "内部状态锁定失败".to_string())?
+        .printer_script
+        .clone();
+    print::run_print(&spec, &script)
 }
 
 // ---------------------------------------------------------------------------
@@ -617,7 +623,12 @@ fn show_quick_window(app: &AppHandle) {
     });
 }
 
-/// 切回完整窗口：隐藏小窗，显示并聚焦完整窗口。
+/// 切回完整窗口：销毁小窗，显示并聚焦完整窗口。
+///
+/// 这里必须 destroy 而不是 hide：hide 只是不可见，WebView2 进程还在，
+/// 内存不会释放。用户切回完整窗口后如果再关掉窗口，那个隐藏的小窗会一直
+/// 挂着 —— 与「关闭窗口释放内存」的设计相冲突。需要时 switch_to_quick
+/// 会重新创建它。
 #[tauri::command]
 fn exit_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
     let data_dir = {
@@ -629,7 +640,7 @@ fn exit_quick_mode(app: AppHandle, state: State<'_, Mutex<AppState>>) -> Result<
     let handle = app.clone();
     std::thread::spawn(move || {
         if let Some(quick) = handle.get_webview_window(QUICK_WINDOW) {
-            let _ = quick.hide();
+            let _ = quick.destroy();
         }
         if let Some(main) = handle.get_webview_window(MAIN_WINDOW) {
             let _ = main.show();

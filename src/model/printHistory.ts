@@ -65,11 +65,18 @@ export function useDuplicateGuard(): DuplicateGuard {
 
 /** 把「多少小时前」格式化成人话 */
 export function formatHoursAgo(hours: number): string {
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} 分钟前`;
-  if (hours < 24) return `${Math.round(hours)} 小时前`;
+  // 先取整、再按取整后的值分档，否则会出现
+  // 「60 分钟前」「24 小时前」「30 天前」这种越界说法
+  // （`hours` 才 0.99 但 round(hours*60) = 60）。
+  const minutes = Math.max(1, Math.round(hours * 60));
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const h = Math.round(hours);
+  if (h < 24) return `${h} 小时前`;
   const days = Math.round(hours / 24);
   if (days < 30) return `${days} 天前`;
-  return `${Math.round(days / 30)} 个月前`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months} 个月前`;
+  return `${Math.round(months / 12)} 年前`;
 }
 
 /** 毫秒时间戳 → 本地时间字符串（YYYY-MM-DD HH:mm） */

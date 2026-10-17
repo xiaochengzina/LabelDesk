@@ -302,12 +302,16 @@ function DesignWorkspace(): JSX.Element {
   const save = useCallback(async () => {
     const state = getState();
     const name = state.doc.name?.trim() || "未命名标签";
-    const layout: LabelLayout = { ...state.doc, name, id: name };
+    // 保存沿用「已载入的模板 id」，只有在没有 id 时才用名字当 id。
+    // 否则改个名字再保存会被当成另存为：磁盘上多出一份文件、模板列表出现两条，
+    // 而原文件仍是旧内容。
+    const id = state.templateId || name;
+    const layout: LabelLayout = { ...state.doc, name, id };
     setBusy(true);
     try {
-      await saveLayout(name, layout);
-      markSaved(name);
-      rememberTemplate(name);
+      await saveLayout(id, layout);
+      markSaved(id);
+      rememberTemplate(id);
       setStatus(`已保存模板「${name}」`, "success");
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e), "error");

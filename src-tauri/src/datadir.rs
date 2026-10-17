@@ -106,7 +106,7 @@ pub fn migrate_legacy_if_needed(root: &Path) -> Result<usize, String> {
     }
 
     let mut moved = 0usize;
-    moved += copy_dir_contents(&legacy, root)?;
+    moved += copy_dir_contents(&legacy, root, 0)?;
     if moved > 0 {
         eprintln!("[LabelDesk] 已把旧数据从 {} 迁移到 {}", legacy.display(), root.display());
     }
@@ -133,7 +133,15 @@ fn is_effectively_empty(dir: &Path) -> bool {
 }
 
 /// 递归复制 `from` 的内容到 `to`（不覆盖已存在的文件），返回复制到的文件数
-fn copy_dir_contents(from: &Path, to: &Path) -> Result<usize, String> {
+///
+/// `depth` 是护栏：正常情况下备份最多几层，超过 [`MAX_COPY_DEPTH`] 说明
+/// 目标在了源内部、正在自我嵌套复制，直接报错而不是把磁盘写满。
+fn copy_dir_contents(from: &Path, to: &Path, depth: usize) -> Result<usize, String> {
+    if depth > MAX_COPY_DEPTH {
+        return Err(format!(
+            "备份层级过深（超过 {MAX_COPY_DEPTH} 层），可能把备份写到了数据目录内部"
+        ));
+    }
     std::fs::create_dir_all(to).map_err(|e| format!("创建目录 {} 失败: {e}", to.display()))?;
     let mut count = 0usize;
     let entries = std::fs::read_dir(from).map_err(|e| format!("读取 {} 失败: {e}", from.display()))?;
@@ -141,7 +149,7 @@ fn copy_dir_contents(from: &Path, to: &Path) -> Result<usize, String> {
         let src = entry.path();
         let dst = to.join(entry.file_name());
         if src.is_dir() {
-            count += copy_dir_contents(&src, &dst)?;
+            count += copy_dir_contents(&src, &dst, depth + 1)?;
         } else {
             if dst.exists() {
                 continue;
@@ -154,6 +162,9 @@ fn copy_dir_contents(from: &Path, to: &Path) -> Result<usize, String> {
     Ok(count)
 }
 
+/// 备份最多递归几层（模板目录 + layouts 也就两层）
+const MAX_COPY_DEPTH: usize = 12;
+
 fn same_path(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(x), Ok(y)) => x == y,
@@ -161,14 +172,45 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// 取一个可能还不存在的路径的「规范形式」：逐级向上找到第一个存在的祖先，
+/// 把剩余部分接回去。用于判断目标是否落在数据目录内部。
+fn canonicalize_lenient(path: &Path) -> Option<PathBuf> {
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut probe = path.to_path_buf();
+    loop {
+        if let Ok(base) = probe.canonicalize() {
+            let mut out = base;
+            for part in tail.iter().rev() {
+                out = out.join(part);
+            }
+            return Some(out);
+        }
+        let name = probe.file_name()?.to_os_string();
+        tail.push(name);
+        probe = probe.parent()?.to_path_buf();
+    }
+}
+
 /// 把整个数据目录复制一份到 `target`（用于备份）。
 ///
 /// 不做删除，只新增；目标已存在文件时会跳过，避免误覆盖别处的数据。
+///
+/// **必须拒绝把备份写进数据目录内部**：设置页把数据目录路径显示在眼前，
+/// 用户很可能直接选它。那样 `dest` 就在 `root` 里，递归复制时会把刚建出来的
+/// `dest` 再当成待复制内容，一路自我嵌套直到路径超长把磁盘写满。
 pub fn backup_to(root: &Path, target: &Path) -> Result<usize, String> {
     if !root.is_dir() {
         return Err(format!("数据目录不存在: {}", root.display()));
     }
-    copy_dir_contents(root, target)
+    if let (Some(root_c), Some(target_c)) = (canonicalize_lenient(root), canonicalize_lenient(target)) {
+        if target_c == root_c || target_c.starts_with(&root_c) {
+            return Err(
+                "备份目标不能选在数据目录里面。请选到别的位置（比如桌面或 D 盘），否则会反复自我复制。"
+                    .to_string(),
+            );
+        }
+    }
+    copy_dir_contents(root, target, 0)
 }
 
 #[cfg(test)]
@@ -218,7 +260,7 @@ mod tests {
         std::fs::write(from.join("fresh.json"), "fresh").unwrap();
         std::fs::write(to.join("keep.json"), "old").unwrap();
 
-        let n = copy_dir_contents(&from, &to).unwrap();
+        let n = copy_dir_contents(&from, &to, 0).unwrap();
         assert_eq!(n, 1, "只应复制 fresh.json");
         assert_eq!(std::fs::read_to_string(to.join("keep.json")).unwrap(), "old");
         assert_eq!(std::fs::read_to_string(to.join("fresh.json")).unwrap(), "fresh");
@@ -234,5 +276,50 @@ mod tests {
         std::fs::write(root.join("config.json"), "{}").unwrap();
         assert!(!is_effectively_empty(&root));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 备份目标选在数据目录内部时必须直接报错。
+    /// 否则递归复制会把刚建出来的目标目录当成待复制内容，无限自我嵌套。
+    #[test]
+    fn backup_into_itself_is_rejected() {
+        let root = temp_dir("backup-self");
+        std::fs::create_dir_all(root.join("layouts")).unwrap();
+        std::fs::write(root.join("config.json"), b"{}").unwrap();
+
+        // 选数据目录本身
+        let err = backup_to(&root, &root.join("LabelDesk-backup-1")).unwrap_err();
+        assert!(err.contains("里面") || err.contains("内部"), "应提示不能选在数据目录里: {err}");
+
+        // 选数据目录的子目录
+        let err2 = backup_to(&root, &root.join("layouts").join("x")).unwrap_err();
+        assert!(err2.contains("里面") || err2.contains("内部"));
+
+        // 目录里不应该被塞出嵌套副本
+        let mut names: Vec<String> = std::fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["config.json".to_string(), "layouts".to_string()]);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 正常备份（目标在外部）要能复制出内容
+    #[test]
+    fn backup_to_outside_works() {
+        let root = temp_dir("backup-ok");
+        let out = temp_dir("backup-dest");
+        std::fs::create_dir_all(root.join("layouts")).unwrap();
+        std::fs::write(root.join("config.json"), b"{\"a\":1}").unwrap();
+        std::fs::write(root.join("layouts").join("t.ldl.json"), b"{}").unwrap();
+
+        let n = backup_to(&root, &out.join("LabelDesk-backup")).unwrap();
+        assert_eq!(n, 2, "应复制 2 个文件");
+        assert!(out.join("LabelDesk-backup").join("config.json").is_file());
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&out);
     }
 }

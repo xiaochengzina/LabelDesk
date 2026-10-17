@@ -267,7 +267,7 @@ fn main() {
     if use_raw {
         // 直接构造原始指令流，验证 winspool 通路
         let mono = rgba_to_mono(&frame.rgba, frame.width, frame.height, spec.threshold);
-        let (rows, w_bytes) = mono_to_row_bytes(&mono, frame.width, frame.height, true);
+        let (rows, w_bytes) = mono_to_row_bytes(&mono, frame.width, frame.height, false);
         let stream = labeldesk_lib::print::build_tspl(
             &rows,
             w_bytes,
