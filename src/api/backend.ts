@@ -234,6 +234,16 @@ export function printHistorySearch(query: string, limit = 100): Promise<PrintRec
   return call<PrintRecord[]>("print_history_search", { query, limit });
 }
 
+/** 历史总条数 */
+export function printHistoryCount(): Promise<number> {
+  return call<number>("print_history_count");
+}
+
+/** 出现过的模板名（去重，供筛选） */
+export function printHistoryTemplates(): Promise<string[]> {
+  return call<string[]>("print_history_templates");
+}
+
 export function printHistoryClear(): Promise<void> {
   return call<void>("print_history_clear");
 }

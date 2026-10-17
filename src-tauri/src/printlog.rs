@@ -192,9 +192,28 @@ pub fn search(data_dir: &Path, query: &str, limit: usize) -> Vec<PrintRecord> {
             })
             .collect()
     };
-    hit.reverse(); // 新的在前
+    // 显式按时间倒序，不依赖「文件必然按时间追加」这个假设
+    // （手动编辑过文件、系统时钟被调整过时，行序就不等于时间序）
+    hit.sort_by(|a, b| b.at_ms.cmp(&a.at_ms));
     hit.truncate(limit.max(1));
     hit
+}
+
+/// 历史总条数（用于界面显示「共 N 条」）
+pub fn count(data_dir: &Path) -> usize {
+    read_all(data_dir).len()
+}
+
+/// 出现过的模板名（去重，供筛选下拉使用）
+pub fn distinct_templates(data_dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = read_all(data_dir)
+        .into_iter()
+        .map(|r| r.template)
+        .filter(|t| !t.trim().is_empty())
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 #[cfg(test)]
@@ -440,6 +459,23 @@ mod tests {
 
         // limit 生效
         assert_eq!(search(&dir, "", 1).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 即使文件里的行序是乱的，也要按时间倒序返回
+    #[test]
+    fn search_sorts_by_time_not_file_order() {
+        let dir = temp_dir("sortorder");
+        let now = now_ms();
+        // 故意乱序写入：先新后旧
+        append(&dir, &rec("NEWEST", now - 1000)).unwrap();
+        append(&dir, &rec("OLDEST", now - 900_000)).unwrap();
+        append(&dir, &rec("MIDDLE", now - 400_000)).unwrap();
+
+        let r = search(&dir, "", 10);
+        let order: Vec<&str> = r.iter().map(|x| x.serial.as_str()).collect();
+        assert_eq!(order, vec!["NEWEST", "MIDDLE", "OLDEST"], "应按时间倒序");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

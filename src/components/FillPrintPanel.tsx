@@ -35,6 +35,7 @@ import {
 import { renderToDataUrl } from "../renderer/renderer";
 import { mmToPx } from "../model/units";
 import { setStatus } from "../state/store";
+import { Icon } from "./Icon";
 
 /** 预览用 DPI：够清晰又不至于太慢 */
 const PREVIEW_DPI = 203;
@@ -397,9 +398,29 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
             </table>
           </div>
         ) : (
-          <div className="fill-placeholder">
-            粘贴后，这里会逐项列出<strong>表格列 → 变量值</strong>，便于核对有没有错位。
-            检测到制表符分隔时最准确。
+          <div className="fill-card grow fill-guide">
+            <div className="fill-guide-inner">
+              <div className="fill-guide-icon">
+                <Icon name="scan-line" size={26} />
+              </div>
+              <div className="fill-guide-title">还没有粘贴数据</div>
+              <ol className="fill-guide-steps">
+                <li>
+                  <span>
+                    在表格里选中<strong>一台电脑的一整行</strong>
+                  </span>
+                </li>
+                <li>
+                  按 <kbd>Ctrl</kbd>+<kbd>C</kbd> 复制
+                </li>
+                <li>
+                  回到上面粘贴框，按 <kbd>Ctrl</kbd>+<kbd>V</kbd>
+                </li>
+              </ol>
+              <div className="fill-guide-note">
+                粘贴后这里会逐项列出「表格列 → 变量值」，便于核对有没有错位。
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -463,7 +484,7 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
           {busy ? "正在发送…" : dup.checking ? "正在查重…" : "打印这张标签"}
         </button>
         {!canPrint && !busy ? (
-          <div className="hint center">
+          <div className="print-reason">
             {!printer ? "未选择打印机" : !fill?.ok ? "请先粘贴一行数据" : ""}
           </div>
         ) : null}

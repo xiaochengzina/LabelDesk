@@ -1188,18 +1188,6 @@ input[type="radio"] {
   font-size: 13px;
 }
 
-.fill-placeholder {
-  flex: 1;
-  min-height: 60px;
-  border: 1px dashed var(--border-strong);
-  border-radius: 8px;
-  padding: 14px;
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1.9;
-  background: rgba(255, 255, 255, 0.5);
-}
-
 .fill-placeholder strong {
   color: var(--text);
 }
@@ -1626,51 +1614,6 @@ body.quick-window {
   margin: 8px 0 0;
 }
 
-/* 历史列表 */
-.history-list {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-  max-height: 240px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.history-list li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-}
-
-.history-list li:last-child {
-  border-bottom: none;
-}
-
-.history-when {
-  flex: 0 0 auto;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.history-serial {
-  flex: 0 0 auto;
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-.history-summary {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-dim);
-}
-
 /* 小窗里的重复提醒：一行放下，不额外弹窗 */
 .quick-dup {
   display: flex;
@@ -1709,4 +1652,452 @@ body.quick-window {
   margin: 6px 0 0;
   padding: 4px 8px;
   font-size: 12px;
+}
+
+/* ------------------------------------------------------ 设置：卡片式分组
+   原来是「一条长列 + 段落级说明」，读起来像文档。
+   改成卡片：每组一个标题行（图标 + 名称），内容是「控件 + 一行说明」。 */
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setting-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 10px 12px;
+}
+
+.setting-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.setting-head-note {
+  margin-left: auto;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.setting-card > .setting-row:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.setting-card > .setting-row:last-of-type {
+  padding-bottom: 0;
+}
+
+.setting-row.check-row {
+  margin: 0;
+  cursor: pointer;
+}
+
+.setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.setting-text strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.setting-text span {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.setting-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+.setting-hint.warn {
+  color: var(--warn);
+}
+
+.setting-hint code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.setting-card .data-dir-path {
+  margin: 0 0 8px;
+}
+
+.setting-card .button-row {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ 打印历史页 */
+
+.history-main-wrap {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-main {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.history-head-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.history-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.history-head > button {
+  margin-left: auto;
+}
+
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.history-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 0 6px 0 8px;
+}
+
+.history-search-wrap .icon {
+  color: var(--text-dim);
+}
+
+.history-search-wrap input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 6px 0;
+}
+
+.history-search-wrap input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.history-search-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.history-filter {
+  flex: 0 0 160px;
+  padding: 6px 8px;
+}
+
+.history-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.history-empty {
+  height: 100%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 24px;
+}
+
+.history-empty .icon {
+  color: var(--border-strong);
+}
+
+.history-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.history-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-2);
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.history-table tbody td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.history-table tbody tr:nth-child(even) {
+  background: #fafbfd;
+}
+
+.history-table tbody tr:hover {
+  background: var(--accent-soft);
+}
+
+.history-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.history-table .col-time {
+  width: 112px;
+  white-space: nowrap;
+}
+
+.history-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.history-ago {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.history-table .col-serial {
+  width: 130px;
+}
+
+.history-table .col-serial code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.history-table .col-template {
+  width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-table .col-printer {
+  width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+}
+
+.history-table .col-src {
+  width: 72px;
+}
+
+.history-summary-cell {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: #174ea6;
+}
+
+.tag.dim {
+  background: var(--panel-2);
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------ 打标签页：空状态引导
+   原来这里是一个 580px 高的虚线空框、只有一行字贴在顶上，看着像没加载出来。
+   改成居中引导：说明「现在该做什么」，并把三步操作写清楚。 */
+
+.fill-guide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: #fcfdff;
+}
+
+.fill-guide-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 28px 24px;
+  max-width: 420px;
+}
+
+.fill-guide-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.fill-guide-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fill-guide-steps {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.fill-guide-steps li {
+  counter-increment: step;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fill-guide-steps li::before {
+  content: counter(step);
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.fill-guide-steps kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 1px 4px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: #fff;
+}
+
+.fill-guide-note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  width: 100%;
+}
+
+/* 打印按钮下方的「为什么不能打印」：不要做成一条灰底横幅 */
+.print-reason {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* 窄窗口下顶部提示会挤到边缘：直接隐藏，操作提示在页面内已经有了 */
+@media (max-width: 1100px) {
+  .mode-bar-hint {
+    display: none;
+  }
+}
+
+/* 历史表格在窄窗口下收紧列宽 */
+@media (max-width: 1100px) {
+  .history-table .col-printer {
+    display: none;
+  }
+
+  .history-table .col-time {
+    width: 100px;
+  }
 }

@@ -18,6 +18,7 @@ import { TemplateManager } from "./components/TemplateManager";
 import { VariablePanel } from "./components/VariablePanel";
 import { listen } from "@tauri-apps/api/event";
 import { FillPrintPanel } from "./components/FillPrintPanel";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Icon, type IconName } from "./components/Icon";
 import {
@@ -46,7 +47,7 @@ import {
 import { createLayout, type LabelLayout } from "./model/types";
 import { renderToDataUrl } from "./renderer/renderer";
 
-type Mode = "print" | "design";
+type Mode = "print" | "design" | "history";
 
 /**
  * 载入模板作为当前编辑对象。
@@ -109,6 +110,13 @@ export function App(): JSX.Element {
           >
             设计模板
           </button>
+          <button
+            className={mode === "history" ? "active" : ""}
+            onClick={() => setMode("history")}
+            title="查看已打印的记录，按序列号查证是否打过"
+          >
+            打印历史
+          </button>
         </div>
         <button
           className="ghost compact settings-button"
@@ -131,14 +139,20 @@ export function App(): JSX.Element {
         <div className="mode-bar-hint">
           {mode === "print"
             ? "在表格里选中一行 → Ctrl+C → 在下面 Ctrl+V → 打印"
-            : "设计好后记得「保存」，并在「字段映射」里配好每一列对应哪个变量"}
+            : mode === "design"
+              ? "设计好后记得「保存」，并在「字段映射」里配好每一列对应哪个变量"
+              : "记录每次出纸，防止同一台机器重复打印"}
         </div>
       </nav>
 
       {mode === "print" ? (
         <PrintWorkspace onOpenDesigner={() => setMode("design")} />
-      ) : (
+      ) : mode === "design" ? (
         <DesignWorkspace />
+      ) : (
+        <main className="history-main-wrap">
+          <HistoryPanel />
+        </main>
       )}
 
       {showSettings ? <SettingsDialog onClose={() => setShowSettings(false)} /> : null}

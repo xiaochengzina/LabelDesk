@@ -385,6 +385,8 @@ pub fn run() {
             print_history_append,
             print_history_recent,
             print_history_search,
+            print_history_count,
+            print_history_templates,
             print_history_clear,
             diagnostics,
         ])
@@ -460,7 +462,7 @@ fn print_history_recent(
         .data_dir
         .clone();
     let mut all = printlog::read_all(&dir);
-    all.reverse();
+    all.sort_by(|a, b| b.at_ms.cmp(&a.at_ms));
     all.truncate(limit.max(1));
     Ok(all)
 }
@@ -478,6 +480,28 @@ fn print_history_search(
         .data_dir
         .clone();
     Ok(printlog::search(&dir, &query, limit))
+}
+
+/// 历史总条数
+#[tauri::command]
+fn print_history_count(state: State<'_, Mutex<AppState>>) -> Result<usize, String> {
+    let dir = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .data_dir
+        .clone();
+    Ok(printlog::count(&dir))
+}
+
+/// 出现过的模板名（去重）
+#[tauri::command]
+fn print_history_templates(state: State<'_, Mutex<AppState>>) -> Result<Vec<String>, String> {
+    let dir = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .data_dir
+        .clone();
+    Ok(printlog::distinct_templates(&dir))
 }
 
 #[tauri::command]

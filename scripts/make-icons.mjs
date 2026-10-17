@@ -75,6 +75,11 @@ const ICONS = {
   WarningIcon: "triangle-alert",
   InfoIcon: "info",
   ScanIcon: "scan-line",
+  SearchIcon: "search",
+  ClockIcon: "clock",
+  EraserIcon: "eraser",
+  DatabaseIcon: "database",
+  WindowIcon: "app-window",
 };
 
 const missing = Object.values(ICONS).filter((n) => !lucide.icons[n]);

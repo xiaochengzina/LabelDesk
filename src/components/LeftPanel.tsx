@@ -88,9 +88,8 @@ function ElementPalette(): JSX.Element {
           </button>
         ))}
       </div>
-      <div className="hint">
-        元素类型由插件注册表提供。新增类型只需在 <code>src/renderer/elements.ts</code> 中注册，
-        界面会自动出现对应入口。
+      <div className="hint element-hint">
+        点一下即可添加到画布，之后在画布上拖动摆位。
       </div>
     </>
   );
