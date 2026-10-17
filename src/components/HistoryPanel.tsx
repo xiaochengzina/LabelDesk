@@ -182,8 +182,8 @@ export function HistoryPanel({ onReprint }: Props): JSX.Element {
               {shown.map((r, i) => (
                 <tr key={`${r.atMs}-${i}`}>
                   <td className="col-time">
-                    <div className="history-time">{formatAt(r.atMs)}</div>
-                    <div className="history-ago">{formatHoursAgo(hoursAgo(r.atMs))}</div>
+                    <span className="history-time">{formatAt(r.atMs)}</span>
+                    <span className="history-ago">{formatHoursAgo(hoursAgo(r.atMs))}</span>
                   </td>
                   <td className="col-serial">
                     <code>{r.serial || "—"}</code>

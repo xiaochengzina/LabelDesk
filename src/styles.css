@@ -1903,9 +1903,11 @@ body.quick-window {
 }
 
 .history-table tbody td {
-  padding: 6px 10px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--border);
-  vertical-align: top;
+  /* 整行单行显示：所有单元格中线对齐，来源标签与复打按钮才会落在同一水平线上 */
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .history-table tbody tr:nth-child(even) {
@@ -1921,16 +1923,17 @@ body.quick-window {
 }
 
 .history-table .col-time {
-  width: 112px;
-  white-space: nowrap;
+  width: 196px;
 }
 
 .history-time {
   font-variant-numeric: tabular-nums;
 }
 
+/* 「2 小时前」跟在日期后面，同一基线，用浅色弱化 */
 .history-ago {
-  font-size: 10px;
+  margin-left: 8px;
+  font-size: 11px;
   color: var(--text-dim);
 }
 
@@ -1959,7 +1962,15 @@ body.quick-window {
 }
 
 .history-table .col-src {
-  width: 72px;
+  width: 78px;
+}
+
+/* 来源标签与复打按钮用同样的盒模型高度，才能中线对齐 */
+.history-table .tag {
+  display: inline-block;
+  line-height: 16px;
+  padding: 2px 7px;
+  vertical-align: middle;
 }
 
 .history-summary-cell {
@@ -2109,10 +2120,15 @@ body.quick-window {
 }
 
 .reprint-button {
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 8px;
   font-size: 11px;
   opacity: 0.72;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .history-table tbody tr:hover .reprint-button:not(:disabled) {
