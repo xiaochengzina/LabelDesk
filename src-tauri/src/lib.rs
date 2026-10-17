@@ -12,6 +12,7 @@
 pub mod autostart;
 pub mod datadir;
 pub mod print;
+pub mod printlog;
 pub mod printers;
 pub mod store;
 pub mod util;
@@ -380,6 +381,10 @@ pub fn run() {
             enter_quick_mode,
             exit_quick_mode,
             close_quick_mode,
+            print_history_check,
+            print_history_append,
+            print_history_recent,
+            print_history_clear,
             diagnostics,
         ])
         .build(tauri::generate_context!())
@@ -395,6 +400,79 @@ pub fn run() {
         });
 }
 
+// ---------------------------------------------------------------------------
+// 打印历史与去重
+// ---------------------------------------------------------------------------
+
+/// 打印前查重：给出候选标识（序列号等），返回近期已打印过的。
+#[tauri::command]
+fn print_history_check(
+    candidates: Vec<String>,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<Vec<printlog::DuplicateHit>, String> {
+    let dir = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .data_dir
+        .clone();
+    Ok(printlog::find_recent_duplicates(&dir, &candidates))
+}
+
+/// 打印成功后记一条。
+#[tauri::command]
+fn print_history_append(
+    serial: String,
+    summary: String,
+    template: String,
+    printer: String,
+    quick: bool,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let dir = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .data_dir
+        .clone();
+    let record = printlog::PrintRecord {
+        at_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+        serial,
+        summary,
+        template,
+        printer,
+        quick,
+    };
+    printlog::append(&dir, &record)
+}
+
+/// 最近 N 条历史（供设置页查看）。
+#[tauri::command]
+fn print_history_recent(
+    limit: usize,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<Vec<printlog::PrintRecord>, String> {
+    let dir = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .data_dir
+        .clone();
+    let mut all = printlog::read_all(&dir);
+    all.reverse();
+    all.truncate(limit.max(1));
+    Ok(all)
+}
+
+#[tauri::command]
+fn print_history_clear(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    let dir = state
+        .lock()
+        .map_err(|_| "状态锁已损坏".to_string())?
+        .data_dir
+        .clone();
+    printlog::clear(&dir)
+}
 // ---------------------------------------------------------------------------
 // 小窗模式
 // ---------------------------------------------------------------------------
@@ -639,7 +717,11 @@ fn open_main_window(app: &AppHandle) {
 // ---------------------------------------------------------------------------
 
 /// 数据目录信息，供设置页显示与「打开目录 / 备份」使用。
+///
+/// 必须 rename_all = "camelCase"：前端按 layoutCount / legacyDir 读取，
+/// 若序列化成 snake_case 会得到 undefined（曾导致设置页显示「当前有 undefined 个模板」）。
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DataDirInfo {
     /// 数据根目录绝对路径
     pub dir: String,
@@ -759,4 +841,35 @@ fn set_autostart(
         enabled: autostart::is_enabled(&app),
         decided: true,
     })
+}
+
+#[cfg(test)]
+mod serde_contract_tests {
+    //! 前后端的字段名契约。
+    //!
+    //! 前端按 camelCase 读取后端返回的结构体。Rust 默认序列化成 snake_case，
+    //! 字段名带下划线就会变成 undefined —— 这个坑踩过两次
+    //! （设置页显示「NaN 个月前」「当前有 undefined 个模板」），所以集中测一遍。
+
+    /// 前端按这些名字读，缺一个就会显示 undefined
+    #[test]
+    fn data_dir_info_is_camel_case() {
+        let info = super::DataDirInfo {
+            dir: "D:/x".into(),
+            layout_count: 2,
+            legacy_dir: Some("D:/old".into()),
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("\"layoutCount\""), "{json}");
+        assert!(json.contains("\"legacyDir\""), "{json}");
+        assert!(!json.contains("layout_count"), "不应出现 snake_case: {json}");
+    }
+
+    #[test]
+    fn autostart_status_is_lowercase_single_words() {
+        let s = super::AutostartStatus { enabled: true, decided: true };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"enabled\""), "{json}");
+        assert!(json.contains("\"decided\""), "{json}");
+    }
 }

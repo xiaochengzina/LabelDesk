@@ -17,6 +17,7 @@ import {
   exitQuickMode,
   listLayouts,
   pickPrinter,
+  printHistoryAppend,
   printLabel,
   readConfig,
   readLayout,
@@ -24,7 +25,8 @@ import {
   type AppConfig,
   type PrinterInfo,
 } from "../api/backend";
-import { buildFill, isReadyForQuickPrint } from "../model/fill";
+import { buildFill, isReadyForQuickPrint, serialCandidates, summarizeForHistory } from "../model/fill";
+import { formatHoursAgo, useDuplicateGuard } from "../model/printHistory";
 import { mmToPx } from "../model/units";
 import { DEFAULT_PRINTER_PROFILE, type LabelLayout } from "../model/types";
 import { renderToDataUrl } from "../renderer/renderer";
@@ -42,6 +44,7 @@ export function QuickPanel(): JSX.Element {
   const [pasteText, setPasteText] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const dup = useDuplicateGuard();
   const pasteRef = useRef<HTMLTextAreaElement>(null);
 
   // 载入可用模板与打印机（只保留配好字段映射的模板）
@@ -164,6 +167,18 @@ export function QuickPanel(): JSX.Element {
         paperName: profile.paperName ?? null,
       });
       setMessage({ kind: "ok", text: res.message ? `已打印 · ${res.message}` : "已打印" });
+
+      // 记一条历史（失败不影响本次打印）
+      if (fill) {
+        const candidates = serialCandidates(fill);
+        printHistoryAppend({
+          serial: candidates[0] ?? "",
+          summary: summarizeForHistory(fill),
+          template: layout.name || layout.id,
+          printer: printer.name,
+          quick: true,
+        }).catch(() => undefined);
+      }
       // 清空并把焦点还回来，便于连续作业
       setPasteText("");
       requestAnimationFrame(() => pasteRef.current?.focus());
@@ -174,17 +189,30 @@ export function QuickPanel(): JSX.Element {
     }
   }, [layout, printer, fill, profile]);
 
+  /** 先查重；有重复就展示提醒并停下 */
+  const requestPrint = useCallback(async () => {
+    if (!fill) return;
+    const ok = await dup.guard(serialCandidates(fill));
+    if (!ok) return;
+    await doPrint();
+  }, [fill, dup, doPrint]);
+
+  /** 用户点「仍要打印」 */
+  const printAnyway = useCallback(async () => {
+    dup.dismiss();
+    await doPrint();
+  }, [dup, doPrint]);
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (canPrint) void doPrint();
+        if (canPrint) void requestPrint();
       } else if (e.key === "Escape") {
         e.preventDefault();
         void exitQuickMode();
       }
     },
-    [canPrint, doPrint],
+    [canPrint, requestPrint],
   );
 
   /**
@@ -271,17 +299,32 @@ export function QuickPanel(): JSX.Element {
           spellCheck={false}
         />
 
+        {dup.pending ? (
+          <div className="quick-dup">
+            <span className="quick-dup-text">
+              序列号 <strong>{dup.pending[0].serial}</strong>{" "}
+              {formatHoursAgo(dup.pending[0].hoursAgo)}已打印过
+            </span>
+            <button className="ghost compact" onClick={() => dup.dismiss()}>
+              取消
+            </button>
+            <button className="danger compact" onClick={() => void printAnyway()}>
+              仍要打
+            </button>
+          </div>
+        ) : null}
+
         <div className="quick-foot">
           <span
             className={fill && fill.warnings.length > 0 ? "quick-msg err" : "quick-msg"}
             title={fill?.warnings.join("\n") ?? ""}
           >
-            {message ? message.text : summary}
+            {message ? message.text : dup.checking ? "正在查重…" : summary}
           </span>
           <button
             className="primary quick-print"
             disabled={!canPrint}
-            onClick={() => void doPrint()}
+            onClick={() => void requestPrint()}
           >
             <Icon name="printer" size={14} />
             {busy ? "打印中…" : "打印"}

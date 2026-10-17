@@ -180,6 +180,59 @@ export function backupDataDir(target: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// 打印历史与去重
+// ---------------------------------------------------------------------------
+
+/** 一条打印记录 */
+export interface PrintRecord {
+  atMs: number;
+  serial: string;
+  summary: string;
+  template: string;
+  printer: string;
+  quick: boolean;
+}
+
+/** 判重命中 */
+export interface DuplicateHit {
+  serial: string;
+  atMs: number;
+  summary: string;
+  template: string;
+  hoursAgo: number;
+}
+
+/** 打印前查重：传入候选标识，返回近期已打印过的 */
+export function printHistoryCheck(candidates: string[]): Promise<DuplicateHit[]> {
+  return call<DuplicateHit[]>("print_history_check", { candidates });
+}
+
+/** 打印成功后记一条 */
+export function printHistoryAppend(args: {
+  serial: string;
+  summary: string;
+  template: string;
+  printer: string;
+  quick: boolean;
+}): Promise<void> {
+  return call<void>("print_history_append", {
+    serial: args.serial,
+    summary: args.summary,
+    template: args.template,
+    printer: args.printer,
+    quick: args.quick,
+  });
+}
+
+/** 最近 N 条历史（新的在前） */
+export function printHistoryRecent(limit = 50): Promise<PrintRecord[]> {
+  return call<PrintRecord[]>("print_history_recent", { limit });
+}
+
+export function printHistoryClear(): Promise<void> {
+  return call<void>("print_history_clear");
+}
+// ---------------------------------------------------------------------------
 // 小窗模式
 // ---------------------------------------------------------------------------
 

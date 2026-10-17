@@ -13,10 +13,14 @@ import {
   dataDirInfo,
   enterQuickMode,
   openDataDir,
+  printHistoryClear,
+  printHistoryRecent,
   setAutostart,
   type AutostartStatus,
   type DataDirInfo,
+  type PrintRecord,
 } from "../api/backend";
+import { formatAt } from "../model/printHistory";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -29,6 +33,8 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [history, setHistory] = useState<PrintRecord[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +50,16 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
         if (!cancelled) setDataDir(d);
       })
       .catch(() => undefined);
+    printHistoryRecent(30)
+      .then((h) => {
+        if (!cancelled) {
+          setHistory(h);
+          setHistoryLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setHistoryLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -81,6 +97,18 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+    }
+  }, []);
+
+  const doClearHistory = useCallback(async () => {
+    if (!confirm("确定清空打印历史？清空后无法再提醒重复打印。")) return;
+    setError(null);
+    try {
+      await printHistoryClear();
+      setHistory([]);
+      setNote("打印历史已清空");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -145,6 +173,42 @@ export function SettingsDialog({ onClose }: Props): JSX.Element {
               。数据已迁移到上面这个位置，确认无误后可以手动删掉旧目录。
             </div>
           ) : null}
+
+          <div className="section-title">打印历史</div>
+          <div className="hint">
+            每次出纸都会记一条，用来在重复打印同一序列号时提醒你 ——
+            标签贴上去撕不下来，重复打印等于浪费一张纸。
+          </div>
+          {historyLoaded ? (
+            history.length === 0 ? (
+              <div className="empty-hint">还没有打印记录。</div>
+            ) : (
+              <ul className="history-list">
+                {history.map((h, i) => (
+                  <li key={`${h.atMs}-${i}`}>
+                    <span className="history-when">{formatAt(h.atMs)}</span>
+                    <span className="history-serial">{h.serial || "—"}</span>
+                    <span className="history-summary" title={h.summary}>
+                      {h.summary || h.template}
+                    </span>
+                    {h.quick ? <span className="hint-inline">小窗</span> : null}
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : (
+            <div className="hint">读取中…</div>
+          )}
+          <div className="button-row">
+            <button
+              className="ghost compact"
+              disabled={history.length === 0}
+              onClick={() => void doClearHistory()}
+            >
+              <Icon name="trash" size={14} />
+              清空历史
+            </button>
+          </div>
 
           <div className="section-title">启动</div>
           <label className="check-row setting-row">

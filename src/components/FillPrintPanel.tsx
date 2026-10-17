@@ -11,11 +11,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { LabelLayout } from "../model/types";
-import { buildFill, isReadyForQuickPrint, type FillResult } from "../model/fill";
+import {
+  buildFill,
+  isReadyForQuickPrint,
+  serialCandidates,
+  summarizeForHistory,
+  type FillResult,
+} from "../model/fill";
+import { formatHoursAgo, useDuplicateGuard } from "../model/printHistory";
 import { DEFAULT_PRINTER_PROFILE, type PrinterProfile } from "../model/types";
 import {
   listLayouts,
   pickPrinter,
+  printHistoryAppend,
   printLabel,
   readConfig,
   readLayout,
@@ -47,6 +55,7 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<string | null>(null);
+  const dup = useDuplicateGuard();
   const pasteRef = useRef<HTMLTextAreaElement | null>(null);
 
   // ---------------------------------------------------------------- 初始化
@@ -225,6 +234,18 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
       setLastResult(`已打印到「${printer.name}」${res.message ? ` · ${res.message}` : ""}`);
       setStatus("已发送打印任务", "success");
 
+      // 记一条历史（失败不影响本次打印结果）
+      if (fill) {
+        const candidates = serialCandidates(fill);
+        printHistoryAppend({
+          serial: candidates[0] ?? "",
+          summary: summarizeForHistory(fill),
+          template: layout.name || layout.id,
+          printer: printer.name,
+          quick: false,
+        }).catch(() => undefined);
+      }
+
       // 清空以便立刻贴下一台；同时把焦点还给粘贴框
       setPasteText("");
       setOverrides({});
@@ -234,14 +255,27 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
     } finally {
       setBusy(false);
     }
-  }, [layout, printer, effectiveVariables, profile]);
+  }, [layout, printer, effectiveVariables, profile, fill]);
 
+  /** 先查重，无重复（或用户已确认）才真正打印 */
+  const requestPrint = useCallback(async () => {
+    if (!fill) return;
+    const ok = await dup.guard(serialCandidates(fill));
+    if (!ok) return; // 已拦下并展示提醒
+    await doPrint();
+  }, [fill, dup, doPrint]);
+
+  /** 用户点「仍要打印」：跳过本次提醒 */
+  const printAnyway = useCallback(async () => {
+    dup.dismiss();
+    await doPrint();
+  }, [dup, doPrint]);
   // 粘贴后自动聚焦，并支持 Ctrl+Enter 直接打印
   const onPasteKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
-        if (canPrint) void doPrint();
+        if (canPrint) void requestPrint();
       }
     },
     [canPrint, doPrint],
@@ -401,8 +435,32 @@ export function FillPrintPanel({ onOpenDesigner }: Props): JSX.Element {
           {layout?.note ? <div className="hint">{layout.note}</div> : null}
         </div>
 
-        <button className="print-big" onClick={doPrint} disabled={!canPrint}>
-          {busy ? "正在发送…" : "打印这张标签"}
+        {dup.pending ? (
+          <div className="alert warn dup-warning">
+            <div>
+              这个序列号近期已经打印过：
+              {dup.pending.map((h) => (
+                <div key={h.serial} className="dup-line">
+                  <strong>{h.serial}</strong>
+                  <span className="hint-inline">
+                    {formatHoursAgo(h.hoursAgo)} · {h.summary || "—"} · {h.template}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="button-row">
+              <button className="ghost compact" onClick={() => dup.dismiss()}>
+                取消
+              </button>
+              <button className="danger compact" onClick={() => void printAnyway()}>
+                仍要打印
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <button className="print-big" onClick={() => void requestPrint()} disabled={!canPrint}>
+          {busy ? "正在发送…" : dup.checking ? "正在查重…" : "打印这张标签"}
         </button>
         {!canPrint && !busy ? (
           <div className="hint center">

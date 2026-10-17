@@ -176,3 +176,53 @@ export function inferFields(layout: LabelLayout): TemplateField[] {
 export function isReadyForQuickPrint(layout: LabelLayout): boolean {
   return (layout.fields ?? []).length > 0;
 }
+
+/**
+ * 从解析结果里挑出「看起来是唯一标识」的值（序列号、资产号等），用于打印去重。
+ *
+ * 难点：不能把所有字段都当标识——型号 `ThinkPad X1 Carbon Gen 9` 也含数字，
+ * 拿它去重会把同型号的机器全判成重复。所以规则收得很紧：
+ *
+ * 1. 优先取变量名本身就表明是序列号的字段（sn / serial / 序列号）
+ * 2. 其余字段必须满足：不含空白、长度 6–40、至少含一位数字、
+ *    且不是纯数字、不是 `YYYY-MM-DD` 这类日期
+ *
+ * 这样 `PF2ABCDE`、`CN0X9F2J` 会被认定为标识，
+ * 而 `i7-1165G7 / 16G / 512G SSD`（含空格）、`2024-03-15`（日期）、
+ * `3280`（纯数字且短）都不会。
+ */
+export function serialCandidates(fill: FillResult): string[] {
+  const serialish = /(^|[^a-z])(sn|s\/n|serial|serialno|serialnumber)([^a-z]|$)|序列号|资产编号/i;
+  const picked: string[] = [];
+
+  // 1) 变量名表明身份的优先
+  for (const item of fill.values) {
+    if (item.field.skip || !item.field.variable) continue;
+    if (!serialish.test(item.field.variable) && !serialish.test(item.field.label ?? "")) continue;
+    const v = item.value.trim();
+    if (v) return [v]; // 明确的序列号字段，直接用
+  }
+
+  // 2) 按形态启发式筛选
+  for (const item of fill.values) {
+    if (item.field.skip) continue;
+    const v = item.value.trim();
+    if (!v) continue;
+    if (picked.includes(v)) continue;
+    if (/\s/.test(v)) continue; // 含空格 → 更像描述文字
+    if (v.length < 6 || v.length > 40) continue;
+    if (!/\d/.test(v)) continue; // 必须含数字
+    if (/^\d+$/.test(v)) continue; // 纯数字（价格/数量）
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(v)) continue; // 日期
+    picked.push(v);
+  }
+  return picked;
+}
+
+/** 给历史记录用的简短摘要：优先型号，其次前两个非空字段 */
+export function summarizeForHistory(fill: FillResult): string {
+  const nonEmpty = fill.values.filter((v) => !v.field.skip && v.value.trim());
+  const model = nonEmpty.find((v) => /型号|model/i.test(v.field.label ?? "") || /型号/i.test(v.field.variable ?? ""));
+  if (model) return model.value.trim();
+  return nonEmpty.slice(0, 2).map((v) => v.value.trim()).join(" · ").slice(0, 80);
+}

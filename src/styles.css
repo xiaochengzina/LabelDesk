@@ -1595,3 +1595,110 @@ body.quick-window {
   margin: 4px 0 8px;
   user-select: text;
 }
+
+/* 重复打印提醒：不抢眼但要能看见，不用 modal 打断操作 */
+.alert.warn {
+  background: #fff8e1;
+  color: #7a5b00;
+  border: 1px solid #f0dfa8;
+}
+
+.dup-warning {
+  text-align: left;
+}
+
+.dup-line {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 4px;
+  padding-left: 2px;
+  border-left: 2px solid #e6c96b;
+  padding-left: 6px;
+}
+
+.dup-line strong {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.dup-warning .button-row {
+  margin: 8px 0 0;
+}
+
+/* 历史列表 */
+.history-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.history-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.history-list li:last-child {
+  border-bottom: none;
+}
+
+.history-when {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-serial {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.history-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+/* 小窗里的重复提醒：一行放下，不额外弹窗 */
+.quick-dup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: #fff8e1;
+  border: 1px solid #f0dfa8;
+  flex: 0 0 auto;
+}
+
+.quick-dup-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: #7a5b00;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-dup-text strong {
+  font-family: var(--mono);
+}
+
+.quick-dup button {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  font-size: 11px;
+}

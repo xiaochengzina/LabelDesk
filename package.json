@@ -17,8 +17,9 @@
     "verify:variables": "node --import ./scripts/loader-register.mjs scripts/verify-variables.mjs",
     "verify:fill": "node --import ./scripts/loader-register.mjs scripts/verify-fill.mjs",
     "verify:dpi": "node --import ./scripts/loader-register.mjs scripts/verify-dpi.mjs",
+    "verify:history": "node --import ./scripts/loader-register.mjs scripts/verify-history.mjs",
     "verify:render": "node --import ./scripts/loader-register.mjs scripts/e2e-print.mjs",
-    "verify:all": "npm run typecheck && npm run verify:1d && npm run verify:qr && npm run verify:variables && npm run verify:fill && npm run verify:dpi",
+    "verify:all": "npm run typecheck && npm run verify:1d && npm run verify:qr && npm run verify:variables && npm run verify:fill && npm run verify:dpi && npm run verify:history",
     "sample:template": "node scripts/make-sample-template.mjs",
     "sample:preview": "node --import ./scripts/loader-register.mjs scripts/preview-template.mjs"
   },
