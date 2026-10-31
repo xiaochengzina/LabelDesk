@@ -68,9 +68,16 @@ function fallbackTemplate() {
   };
 }
 
-const layout = loadTemplate() ?? fallbackTemplate();
-const source = loadTemplate() ? "真实模板" : "内置测试模板";
-console.log(`模板：${layout.name}（${source}）\n`);
+// 固定用内置模板。
+//
+// 曾经优先用用户的真实模板，结果两次踩坑：用户模板没有字段映射时 buildFill
+// 返回 null 直接崩；用户只有 1 列时测试用例（假定 6 列）全线失败。
+// 测试数据必须确定，不能跟着用户环境变。
+const layout = fallbackTemplate();
+const real = loadTemplate();
+console.log("模板：内置测试模板（6 列：型号/入库时间/配置/价格/回收人/SN）");
+if (real) console.log(`（检测到你的模板「${real.name}」，但测试不用它，避免结果随环境变化）`);
+console.log("");
 
 let pass = 0;
 let fail = 0;

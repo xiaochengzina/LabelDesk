@@ -22,6 +22,7 @@ import { HistoryPanel } from "./components/HistoryPanel";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Icon, type IconName } from "./components/Icon";
 import {
+  deleteLayout,
   enterQuickMode,
   exportLayout,
   importLayout,
@@ -302,14 +303,32 @@ function DesignWorkspace(): JSX.Element {
   const save = useCallback(async () => {
     const state = getState();
     const name = state.doc.name?.trim() || "未命名标签";
-    // 保存沿用「已载入的模板 id」，只有在没有 id 时才用名字当 id。
-    // 否则改个名字再保存会被当成另存为：磁盘上多出一份文件、模板列表出现两条，
-    // 而原文件仍是旧内容。
-    const id = state.templateId || name;
+    const oldId = state.templateId;
+    let id = oldId || name;
+
+    // 改名的处理：让「内部 id」跟着「显示名」走，否则文件还叫旧名字，
+    // 状态栏会出现「质检码 (未命名标签)」这种错位，用户以为模板没被认到。
+    //
+    // 但**目标名已被别的模板占用时不能跟着改** —— 那会覆盖掉别人。
+    // 这种情况下保留原 id，只更新文件里的 name。
+    if (oldId && name !== oldId) {
+      try {
+        const list = await listLayouts();
+        const taken = list.some((t) => t.id === name && t.id !== oldId);
+        if (!taken) id = name;
+      } catch {
+        /* 列表读不到就安全起见保留原 id */
+      }
+    }
+
     const layout: LabelLayout = { ...state.doc, name, id };
     setBusy(true);
     try {
       await saveLayout(id, layout);
+      // 新文件已经写好了，把旧名字那份删掉，避免列表里出现两份
+      if (oldId && id !== oldId) {
+        await deleteLayout(oldId).catch(() => undefined);
+      }
       markSaved(id);
       rememberTemplate(id);
       setStatus(`已保存模板「${name}」`, "success");
@@ -539,7 +558,9 @@ function DesignWorkspace(): JSX.Element {
         <span className="status-message">{status?.text ?? "就绪"}</span>
       </footer>
 
-      {showPrint ? <PrintDialog onClose={() => setShowPrint(false)} /> : null}
+      {showPrint ? (
+        <PrintDialog onClose={() => setShowPrint(false)} onPersist={save} />
+      ) : null}
       {showTemplates ? <TemplateManager onClose={() => setShowTemplates(false)} /> : null}
     </>
   );

@@ -7,7 +7,7 @@
  * - 打印前提供预览与诊断信息，避免「点了没反应」的困惑
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { DEFAULT_PRINTER_PROFILE, type PrinterProfile } from "../model/types";
 import {
@@ -24,6 +24,13 @@ import { Icon } from "./Icon";
 
 interface Props {
   onClose: () => void;
+  /**
+   * 把当前模板落盘（由 App 提供的 save）。
+   *
+   * 打印参数（通路/语言/dpi/浓度/反转位极性/定位补偿…）属于模板的一部分，
+   * 改了要能记住 —— 否则「勾了反转位极性，打完关掉窗口又变回去了」。
+   */
+  onPersist?: () => Promise<void>;
 }
 
 /** 保留一位小数，避免 ±1 累加后出现 3.0000000000000004 */
@@ -31,7 +38,7 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
-export function PrintDialog({ onClose }: Props): JSX.Element {
+export function PrintDialog({ onClose, onPersist }: Props): JSX.Element {
   const doc = useEditor((s) => s.doc);
   const initial = doc.printer ?? DEFAULT_PRINTER_PROFILE;
   const [profile, setProfile] = useState<PrinterProfile>(initial);
@@ -43,7 +50,41 @@ export function PrintDialog({ onClose }: Props): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
 
-  const patch = (next: Partial<PrinterProfile>) => setProfile((p) => ({ ...p, ...next }));
+  /**
+   * 改一项参数：同时更新本地状态和**文档**。
+   *
+   * 只更新本地状态是不够的 —— 那样关闭对话框就丢，用户会以为「设置不保存」。
+   * 写进文档后：设计画布/打标签页立刻用新参数，且文档变「未保存」。
+   */
+  const patch = (next: Partial<PrinterProfile>) => {
+    const merged = { ...profile, ...next };
+    setProfile(merged);
+    setLayoutMeta({ printer: merged });
+  };
+
+  /** 挂载时的参数快照，用来判断「到底改过没有」 */
+  const initialRef = useRef(initial);
+
+  /** 落盘但不打扰用户：失败只写状态栏，不弹错 */
+  const persistQuietly = useCallback(async () => {
+    if (!onPersist) return;
+    try {
+      await onPersist();
+    } catch (e) {
+      setStatus(`模板保存失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    }
+  }, [onPersist]);
+
+  /**
+   * 关闭：参数真的变了就先落盘再关。
+   * 这样「只勾了反转位极性就关掉」也不会白改 —— 用户不必记得再按保存。
+   */
+  const handleClose = useCallback(async () => {
+    if (JSON.stringify(profile) !== JSON.stringify(initialRef.current)) {
+      await persistQuietly();
+    }
+    onClose();
+  }, [profile, persistQuietly, onClose]);
 
   // 读取打印机列表
   useEffect(() => {
@@ -159,11 +200,11 @@ export function PrintDialog({ onClose }: Props): JSX.Element {
   const isRaw = profile.channel === "raw";
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={() => void handleClose()}>
       <div className="modal print-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>打印标签</h2>
-          <button className="icon-button" onClick={onClose} title="关闭">
+          <button className="icon-button" onClick={() => void handleClose()} title="关闭">
             <Icon name="x" size={16} />
           </button>
         </div>
@@ -412,7 +453,7 @@ export function PrintDialog({ onClose }: Props): JSX.Element {
         </div>
 
         <div className="modal-footer">
-          <button className="ghost" onClick={onClose}>
+          <button className="ghost" onClick={() => void handleClose()}>
             关闭
           </button>
           <button className="primary" onClick={doPrint} disabled={busy || !profile.name}>
