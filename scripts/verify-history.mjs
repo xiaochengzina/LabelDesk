@@ -20,11 +20,22 @@ const localLayouts = path.join(
   "layouts",
 );
 
+/**
+ * 优先用用户真实模板做测试数据；但必须**配好字段映射**才有意义。
+ * 没有 fields 的模板 buildFill 会返回 null（打标签页也正因此不列它），
+ * 拿去当测试数据会让脚本崩掉，所以这种模板视为「没有可用模板」。
+ */
 function loadTemplate() {
   for (const dir of [localLayouts, layoutsDir]) {
     if (!existsSync(dir)) continue;
-    const f = readdirSync(dir).find((n) => n.endsWith(".ldl.json"));
-    if (f) return JSON.parse(readFileSync(path.join(dir, f), "utf8"));
+    for (const f of readdirSync(dir).filter((n) => n.endsWith(".ldl.json"))) {
+      try {
+        const doc = JSON.parse(readFileSync(path.join(dir, f), "utf8"));
+        if (Array.isArray(doc.fields) && doc.fields.length > 0) return doc;
+      } catch {
+        /* 坏文件跳过 */
+      }
+    }
   }
   return null;
 }

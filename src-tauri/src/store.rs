@@ -50,14 +50,22 @@ pub fn list(root: &Path) -> Result<Vec<LayoutSummary>, String> {
 
         // 模板文件很小，直接读出来取展示信息；损坏的文件跳过而不是让整个列表失败
         let (name, w, h) = match std::fs::read_to_string(&path) {
-            Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+            // strip_bom：记事本另存的模板带 BOM，不剥掉会被当成「文件损坏」
+            Ok(text) => match serde_json::from_str::<serde_json::Value>(strip_bom(&text)) {
                 Ok(v) => (
                     v.get("name")
                         .and_then(|n| n.as_str())
                         .map(str::to_string)
                         .unwrap_or_else(|| id.clone()),
-                    v.get("widthMm").and_then(|n| n.as_f64()),
-                    v.get("heightMm").and_then(|n| n.as_f64()),
+                    // 尺寸在 settings 里；顶层读的是兼容更早/导入的扁平结构
+                    v.get("settings")
+                        .and_then(|s| s.get("widthMm"))
+                        .and_then(|n| n.as_f64())
+                        .or_else(|| v.get("widthMm").and_then(|n| n.as_f64())),
+                    v.get("settings")
+                        .and_then(|s| s.get("heightMm"))
+                        .and_then(|n| n.as_f64())
+                        .or_else(|| v.get("heightMm").and_then(|n| n.as_f64())),
                 ),
                 Err(_) => (format!("{id}（文件损坏）"), None, None),
             },
@@ -91,7 +99,15 @@ pub fn read_raw(root: &Path, id: &str) -> Result<String, String> {
     if !path.exists() {
         return Err(format!("模板「{id}」不存在"));
     }
-    std::fs::read_to_string(&path).map_err(|e| format!("读取模板失败: {e}"))
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("读取模板失败: {e}"))?;
+    // 记事本「UTF-8」另存会带 BOM，serde_json 不接受开头 BOM。
+    // 不剥掉的话，被记事本保存过的模板会变成「文件损坏」、直接消失在列表里。
+    Ok(strip_bom(&text).to_string())
+}
+
+/// 去掉开头的 UTF-8 BOM
+fn strip_bom(text: &str) -> &str {
+    text.trim_start_matches('\u{feff}')
 }
 
 /// 写入模板。`id` 会做文件名净化，防止越权写到目录之外。
@@ -163,6 +179,7 @@ pub fn export_to(root: &Path, id: &str, target: &Path) -> Result<String, String>
 /// 从用户选定路径导入，返回写入后的新模板 id。
 pub fn import_from(root: &Path, source: &Path) -> Result<String, String> {
     let text = std::fs::read_to_string(source).map_err(|e| format!("读取导入文件失败: {e}"))?;
+    let text = strip_bom(&text).to_string();
     let value: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("导入文件不是合法模板 JSON: {e}"))?;
 
@@ -440,6 +457,40 @@ mod tests {
         write_config(&layouts, &serde_json::json!({"lastTemplateId": "A"})).unwrap();
         write_config(&layouts, &serde_json::json!({"lastTemplateId": "B"})).unwrap();
         assert_eq!(read_config(&layouts)["lastTemplateId"], serde_json::json!("B"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 记事本另存的模板带 BOM，必须还能读（否则模板会「消失」在列表里）
+    #[test]
+    fn reads_template_with_bom() {
+        let root = temp_root("bom");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("带BOM.ldl.json");
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice("{\"version\":1,\"name\":\"带BOM\",\"widthMm\":40,\"heightMm\":30,\"elements\":[]}".as_bytes());
+        std::fs::write(&path, bytes).unwrap();
+
+        let text = read_raw(&root, "带BOM").expect("带 BOM 的模板应能读取");
+        assert!(text.starts_with('{'), "读出来应该已经去掉 BOM");
+
+        let list = list(&root).unwrap();
+        let found = list.iter().find(|s| s.id.contains("BOM")).expect("应出现在列表里");
+        assert_eq!(found.name, "带BOM", "名称要能解析出来");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 模板尺寸存在 settings 里，列表必须能读到（否则下拉框不显示尺寸）
+    #[test]
+    fn list_reads_size_from_settings() {
+        let root = temp_root("list-size");
+        std::fs::create_dir_all(&root).unwrap();
+        let json = r#"{"version":1,"name":"尺寸测试","settings":{"widthMm":80,"heightMm":30},"elements":[]}"#;
+        std::fs::write(root.join("尺寸测试.ldl.json"), json).unwrap();
+
+        let list = list(&root).unwrap();
+        let one = list.iter().find(|s| s.name == "尺寸测试").expect("应能找到");
+        assert_eq!(one.width_mm, Some(80.0));
+        assert_eq!(one.height_mm, Some(30.0));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

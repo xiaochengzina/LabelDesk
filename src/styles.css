@@ -2138,3 +2138,48 @@ body.quick-window {
 .reprint-button:disabled {
   opacity: 0.32;
 }
+
+/* 打标签页：有模板但都不可用时，列出模板并说明缺什么 */
+.fill-empty-list {
+  list-style: none;
+  margin: 12px 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 320px;
+}
+
+.fill-empty-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  font-size: 12px;
+}
+
+.fill-empty-list li strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.fill-empty-list li span {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.badge-warn {
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: #fff8e1;
+  border: 1px solid #f0dfa8;
+  color: var(--warn) !important;
+}

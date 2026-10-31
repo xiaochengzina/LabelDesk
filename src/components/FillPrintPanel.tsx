@@ -50,6 +50,8 @@ interface Props {
 
 export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: Props): JSX.Element {
   const [templates, setTemplates] = useState<LayoutSummary[]>([]);
+  /** 配好字段映射、能直接打标签的模板 id 集合 */
+  const [usableIds, setUsableIds] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState<LabelLayout | null>(null);
   const [printer, setPrinter] = useState<PrinterInfo | null>(null);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
@@ -82,17 +84,27 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
         setPrinter(chosen);
         if (chosen) setPrinters([chosen]);
 
-        // 只保留配好字段映射的模板，供操作员选择
+        // 逐个读模板，判断哪些配好了字段映射。
+        //
+        // 注意：**下拉框要列出全部模板**，不能只列可用的。
+        // 只列可用的会让「新建的模板没配映射」表现为「程序认不到这个模板」——
+        // 用户看到列表里只有旧模板，完全不知道少了什么、该去哪补。
+        // 所以全部列出，选到未配置的再就地说明并给入口。
         const usable: LayoutSummary[] = [];
+        const usableSet = new Set<string>();
         for (const item of list) {
           try {
             const doc = await readLayout(item.id);
-            if (isReadyForQuickPrint(doc)) usable.push(item);
+            if (isReadyForQuickPrint(doc)) {
+              usable.push(item);
+              usableSet.add(item.id);
+            }
           } catch {
             /* 单个模板损坏不影响其他模板 */
           }
         }
-        setTemplates(usable);
+        setTemplates(list);
+        setUsableIds(usableSet);
 
         // 选模板的优先级：**复打指定的模板 > 上次用的模板 > 第一个可用模板**
         //
@@ -423,14 +435,40 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
   if (templates.length === 0) {
     return (
       <div className="fill-empty">
-        <h2>还没有可用于打标签的模板</h2>
+        <h2>还没有模板</h2>
         <p>
-          模板需要先由管理员设计布局、定义变量，并配好「字段映射」（第几列对应哪个变量）。
+          先设计一个标签模版：布局、变量，再配好「字段映射」（表格第几列对应哪个变量）。
           <br />
           配好之后，这个页面就能直接粘贴表格里的一行数据出标签了。
         </p>
         <button className="primary" onClick={onOpenDesigner}>
           去设计模板
+        </button>
+      </div>
+    );
+  }
+
+  // 有模板，但一个都没配字段映射 —— 明确说清楚「缺什么、缺哪个」，
+  // 别让用户以为是程序认不到模板。
+  if (usableIds.size === 0) {
+    return (
+      <div className="fill-empty">
+        <h2>模板还不能用来打标签</h2>
+        <p>
+          下面这些模板存在，但都还没配「字段映射」——那是告诉程序
+          「表格第几列填到哪个变量」的地方。
+        </p>
+        <ul className="fill-empty-list">
+          {templates.map((t) => (
+            <li key={t.id}>
+              <strong>{t.name || t.id}</strong>
+              <span>{t.widthMm} × {t.heightMm} mm</span>
+              <span className="badge-warn">未配字段映射</span>
+            </li>
+          ))}
+        </ul>
+        <button className="primary" onClick={onOpenDesigner}>
+          去配置字段映射
         </button>
       </div>
     );
@@ -451,6 +489,7 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
                 <option key={t.id} value={t.id}>
                   {t.name}
                   {t.widthMm && t.heightMm ? `（${t.widthMm}×${t.heightMm}mm）` : ""}
+                  {usableIds.has(t.id) ? "" : " — 未配字段映射"}
                 </option>
               ))}
             </select>
@@ -477,6 +516,14 @@ export function FillPrintPanel({ onOpenDesigner, prefill, onPrefillConsumed }: P
             粘贴一行数据
             <span className="hint-inline">在表格里选中一台电脑那一行，Ctrl+C，然后在这里 Ctrl+V</span>
           </div>
+          {layout && !usableIds.has(layout.id) ? (
+            <div className="alert warn">
+              这个模板还没配「字段映射」，粘贴的数据不知道往哪几个变量里填。
+              <button className="ghost compact" onClick={onOpenDesigner}>
+                去配置
+              </button>
+            </div>
+          ) : null}
           <textarea
             ref={pasteRef}
             className="paste-area"
